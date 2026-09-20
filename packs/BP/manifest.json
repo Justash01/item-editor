@@ -1,0 +1,23 @@
+{
+    "format_version": 2,
+    "header": {
+        "name": "pack.name",
+        "description": "pack.description",
+        "uuid": "618e668a-ae5e-438c-81ea-ae324df76418",
+        "version": [2, 0, 0],
+        "min_engine_version": [1, 26, 40]
+    },
+    "modules": [
+        {
+            "type": "data",
+            "uuid": "6280645e-2920-49e0-8677-0b2220ee4787",
+            "version": [2, 0, 0]
+        }
+    ],
+    "metadata": {
+        "authors": ["JustAsh01"],
+        "license": "MIT",
+        "url": "https://github.com/Justash01/item-editor",
+        "product_type": "addon"
+    }
+}

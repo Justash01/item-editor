@@ -1,36 +1,83 @@
-# Item Editor for Minecraft Bedrock Edition
+# Item Editor
 
-This project provides an add-on for Minecraft Bedrock Edition that allows direct editing of item properties in-game. It leverages the Script API and requires no additional toggles in your world settings.
+An add-on for Minecraft Bedrock that edits items which already exist. Rename
+them, write their lore, change enchantments, set durability, fill in a book,
+retouch a sign, and hand the lot out as a kit.
 
-## Features
+No experimental toggles required.
 
-- Manipulate items in entities' inventories or block containers.
-- User-friendly GUI within Minecraft.
+<p align="center">
+  <img src="docs/images/item-tooltip.png" width="520" alt="A diamond sword with a custom name, lore and enchantments">
+</p>
 
-### Author
-- [Justash01](https://github.com/Justash01) on GitHub
-- Discord: `jstash`
+## Setup
 
-## Getting Started
-
-### Prerequisites
-
-- Minecraft Bedrock Edition.
-- Game version: v1.21.20 or later.
-- Familiarity with installing behavior packs.
-
-### Usage
-
-1. Download the latest `ItemEditor.mcpack` from the [Releases](https://github.com/Justash01/item-editor-mcbe/releases) page.
+1. Grab the latest `ItemEditor.mcpack` from
+   [Releases](https://github.com/Justash01/item-editor/releases).
 2. Apply the behavior pack to your world.
-3. After entering the world, run the following command in-game to launch the editor:
-   ```
-   /scriptevent item:editor
-   ```
-4. Continue using the editor through the in-game GUI.
+3. Activate cheats. You'll need operator.
 
-![image](https://github.com/user-attachments/assets/82276735-3857-427f-9bbe-f1ebfc6a7e99)
-![image](https://github.com/user-attachments/assets/61202af9-71a8-4552-bc7e-b419a71f781f)
-![image](https://github.com/user-attachments/assets/93508d34-cae1-43bc-835d-92f422c2bc62)
+Needs Minecraft Bedrock **1.26.40** or newer.
 
+## Menus
 
+```
+/jstash:editor
+```
+
+Pick your own inventory, another player, or whatever you're looking at, then
+pick an item. Name, lore, enchantments, durability and flags all live in there,
+along with book pages, sign text and block states.
+
+![Start menu, item menu and properties form](docs/images/gallery-editor.png)
+
+There's a Wand for easily reaching and editing entities and blocks directly, a clipboard for copying one
+item's setup onto another, undo on every slot, and a bulk mode for doing all of
+that to a whole set of armor at once. The
+[editor guide](docs/editor.md) walks through it.
+
+## Commands
+
+Pick something once, then edit it as many times as you like:
+
+```
+/jstash:select @s head
+/jstash:set name "Great helmet"
+/jstash:ench protection 4
+/jstash:set unbreakable true
+```
+
+Swap the slot for a group like `equipment` and every command after it covers
+the whole set. There's also `/jstash:grant` for building an item in one line,
+`/jstash:kit` for saving and handing out inventories, and `/jstash:block` for
+block states. The [command reference](docs/commands.md) has all of them.
+
+## What it can't do
+
+- **Enchantment levels cannot go beyond vanilla maximum**, and enchantments that
+  clash are refused. That's the game limitation.
+- **Food, potion and cooldown values are read-only.** You can look at them and
+  that's it.
+- **Blocks only expose their states**, plus sign text and container contents.
+
+## Building from source
+
+Needs [Regolith](https://regolith-docs.readthedocs.io/en/latest/introduction/installation/) and Node.
+
+```bash
+regolith install-all
+regolith run
+```
+
+## Credits
+
+Made by [Justash01](https://github.com/Justash01). Discord: `jstash`.
+
+Found a bug or want something added? Open an
+[issue](https://github.com/Justash01/item-editor/issues).
+
+Built with [Regolith](https://github.com/Bedrock-OSS/regolith) and the
+[gametests filter](https://github.com/Bedrock-OSS/regolith-filters) from
+Bedrock OSS.
+
+Released under the [MIT license](LICENSE).

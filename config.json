@@ -1,46 +1,100 @@
 {
-  "$schema": "https://raw.githubusercontent.com/Bedrock-OSS/regolith-schemas/main/config/v1.1.json",
-  "author": "JustAsh01",
-  "name": "item-editor",
-  "packs": {
-    "behaviorPack": "./behavior_pack",
-    "resourcePack": "./resource_pack"
-  },
-  "regolith": {
-    "dataPath": "./data",
-    "filterDefinitions": {
-      "esbuild": {
-        "url": "github.com/ink0rr/regolith-filters",
-        "version": "0.1.0"
-      }
+    "$schema": "https://raw.githubusercontent.com/Bedrock-OSS/regolith-schemas/main/config/v1.7.json",
+    "author": "JustAsh01",
+    "name": "ItemEditor",
+    "packs": {
+        "behaviorPack": "./packs/BP"
     },
-    "profiles": {
-      "default": {
-        "export": {
-          "target": "development"
-        },
-        "filters": [
-          {
-            "filter": "esbuild",
-            "settings": {
-              "entryPoints": [
-                "data/scripts/main.ts"
-              ],
-              "minify": false
+    "regolith": {
+        "dataPath": "./packs/data",
+        "formatVersion": "1.7.0",
+        "filterDefinitions": {
+            "gametests": {
+                "url": "github.com/Bedrock-OSS/regolith-filters",
+                "version": "1.7.4"
             }
-          }
-        ]
-      },
-      "build": {
-        "export": {
-          "target": "local"
         },
-        "filters": [
-          {
-            "profile": "default"
-          }
-        ]
-      }
+        "profiles": {
+            "default": {
+                "export": {
+                    "readOnly": false,
+                    "target": "development",
+                    "build": "standard"
+                },
+                "filters": [
+                    {
+                        "profile": "scripts-dev"
+                    }
+                ]
+            },
+            "scripts-dev": {
+                "export": {
+                    "readOnly": false,
+                    "target": "none"
+                },
+                "filters": [
+                    {
+                        "filter": "gametests",
+                        "settings": {
+                            "buildOptions": {
+                                "bundle": true,
+                                "entryPoints": [
+                                    "data/gametests/src/main.ts"
+                                ],
+                                "format": "esm",
+                                "minify": false,
+                                "target": "es2020"
+                            },
+                            "debugBuild": true,
+                            "injectSourceMapping": true,
+                            "modules": [
+                                "@minecraft/server@2.9.0",
+                                "@minecraft/server-ui@2.1.0"
+                            ],
+                            "outfile": "BP/scripts/jstash/item_editor/main.js",
+                            "moduleUUID": "16519e12-58a5-4f39-8ef7-50a3d6fc4eaf"
+                        }
+                    }
+                ]
+            },
+            "scripts-release": {
+                "export": {
+                    "target": "none"
+                },
+                "filters": [
+                    {
+                        "filter": "gametests",
+                        "settings": {
+                            "buildOptions": {
+                                "bundle": true,
+                                "entryPoints": [
+                                    "data/gametests/src/main.ts"
+                                ],
+                                "format": "esm",
+                                "minify": true,
+                                "target": "es2020"
+                            },
+                            "debugBuild": false,
+                            "modules": [
+                                "@minecraft/server@2.9.0",
+                                "@minecraft/server-ui@2.1.0"
+                            ],
+                            "outfile": "BP/scripts/jstash/item_editor/main.js",
+                            "moduleUUID": "16519e12-58a5-4f39-8ef7-50a3d6fc4eaf"
+                        }
+                    }
+                ]
+            },
+            "build": {
+                "export": {
+                    "target": "local"
+                },
+                "filters": [
+                    {
+                        "profile": "scripts-release"
+                    }
+                ]
+            }
+        }
     }
-  }
 }

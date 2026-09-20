@@ -1,0 +1,28 @@
+{
+    "name": "item-editor-gametests",
+    "version": "2.0.0",
+    "description": "Scripts for the Item Editor behavior pack.",
+    "type": "module",
+    "private": true,
+    "scripts": {
+        "typecheck": "tsc --noEmit",
+        "lint": "eslint src",
+        "format": "prettier --write \"src/**/*.ts\"",
+        "format:check": "prettier --check \"src/**/*.ts\""
+    },
+    "author": "JustAsh01",
+    "license": "MIT",
+    "dependencies": {
+        "@minecraft/server": "2.9.0",
+        "@minecraft/server-ui": "2.1.0",
+        "@minecraft/vanilla-data": "^1.26.44"
+    },
+    "devDependencies": {
+        "@eslint/js": "^9.30.1",
+        "eslint": "^9.30.1",
+        "eslint-plugin-minecraft-linting": "^2.0.5",
+        "prettier": "^3.9.6",
+        "typescript": "^5.8.3",
+        "typescript-eslint": "^8.35.1"
+    }
+}
