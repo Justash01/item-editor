@@ -120,7 +120,7 @@ Stored on the world, so they apply to everyone on it.
 
 | Setting | Default | |
 | --- | --- | --- |
-| Chat messages | Everything | What the editor reports in chat: everything, failures only, or nothing. |
+| Chat messages | Everything | What the add-on reports in chat, from the menus and the commands alike: everything, failures only, or nothing. |
 | Sounds | On | A sound when something works, another when it fails. |
 | Localized names | On | Item and block names in your language. Off shows ids like `minecraft:diamond_sword`. |
 | Roman enchantment levels | On | `Sharpness V` instead of `Sharpness 5`. |

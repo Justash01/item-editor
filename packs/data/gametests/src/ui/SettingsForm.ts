@@ -38,7 +38,7 @@ export class SettingsForm {
                 label: level.label,
                 value: index,
             })),
-            { description: 'What editor actions report in chat.' }
+            { description: 'What the add-on reports in chat.' }
         );
         form.toggle('Sounds', soundFeedback, {
             description: 'A sound when something works, another when it fails.',

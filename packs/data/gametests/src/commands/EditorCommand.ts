@@ -11,6 +11,7 @@ import { Log } from '../util/Log';
 import { Color } from '../util/colors';
 import { Result, describeError } from '../util/Result';
 import { chatMessage, plainText } from '../util/names';
+import { MessageKind, chat } from '../ui/feedback';
 
 export interface CommandEnumDefinition {
     readonly name: string;
@@ -82,27 +83,43 @@ export class CommandFeedback {
     }
 
     static success(origin: CustomCommandOrigin, message: string): void {
-        CommandFeedback.send(origin, `${Color.Green}${message}`, message);
+        CommandFeedback.send(
+            origin,
+            `${Color.Green}${message}`,
+            message,
+            'success'
+        );
     }
 
     static error(origin: CustomCommandOrigin, message: string): void {
-        CommandFeedback.send(origin, `${Color.Red}${message}`, message);
+        CommandFeedback.send(
+            origin,
+            `${Color.Red}${message}`,
+            message,
+            'failure'
+        );
     }
 
     static raw(origin: CustomCommandOrigin, message: string): void {
-        CommandFeedback.send(origin, message, message);
+        CommandFeedback.send(origin, message, message, 'always');
     }
 
     private static send(
         origin: CustomCommandOrigin,
         formatted: string,
-        plain: string
+        plain: string,
+        kind: MessageKind | 'always'
     ): void {
         const viewer = CommandFeedback.viewer(origin);
-        if (viewer) {
+        if (!viewer) {
+            CommandFeedback.log.info(plainText(plain));
+            return;
+        }
+
+        if (kind === 'always') {
             viewer.sendMessage(chatMessage(formatted));
         } else {
-            CommandFeedback.log.info(plainText(plain));
+            chat(viewer, formatted, kind);
         }
     }
 

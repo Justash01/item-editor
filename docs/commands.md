@@ -73,6 +73,11 @@ Green worked, red didn't, and the red lines say what was expected. Errors that
 depend on the item, like enchanting a stick, arrive a moment after the command
 rather than immediately.
 
+The **Chat messages** [setting](editor.md#settings) turns these down to failures
+only, or off entirely. Reports you asked for, like `item inspect` and
+`item list`, print either way. So do the errors the game itself raises for a bad
+argument, since those come from the command parser rather than from the add-on.
+
 Item and block names follow the **Localized names**
 [setting](editor.md#settings); with it off you get ids like
 `minecraft:diamond_sword`.
