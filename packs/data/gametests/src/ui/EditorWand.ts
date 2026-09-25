@@ -14,7 +14,9 @@ const MARKER = namespaced('wand');
 export class EditorWand {
     private constructor() {}
 
-    static toggle(viewer: Player): 'bound' | 'released' | undefined {
+    static toggle(
+        viewer: Player
+    ): 'bound' | 'released' | 'stackable' | undefined {
         const source = InventorySource.of(viewer);
         if (!source.ok) {
             return undefined;
@@ -31,6 +33,10 @@ export class EditorWand {
         }
 
         const wasWand = item.getDynamicProperty(MARKER) === true;
+        // because setDynamicProperty throws on anything that stacks.
+        if (!wasWand && item.isStackable) {
+            return 'stackable';
+        }
         item.setDynamicProperty(MARKER, wasWand ? undefined : true);
         slot.value.write(item);
 

@@ -27,6 +27,8 @@ export class SettingsForm {
         const reach = writableNumber(current.reach);
         const undoDepth = writableNumber(current.undoDepth);
         const wandNeedsSneak = writableBoolean(current.wandNeedsSneak);
+        const stackableAbilities = writableBoolean(current.stackableAbilities);
+        const typedNumbers = writableBoolean(current.typedNumbers);
 
         form.header('Feedback');
         // Headings sit right on top of the next row without this.
@@ -63,7 +65,8 @@ export class SettingsForm {
         });
         form.slider('Reach', reach, REACH_RANGE.min, REACH_RANGE.max, {
             step: 1,
-            description: 'How far the "in view" options reach, in blocks.',
+            description:
+                'How far "in view" options and on-use abilities reach, in blocks.',
         });
         form.slider('Undo steps', undoDepth, UNDO_RANGE.min, UNDO_RANGE.max, {
             step: 1,
@@ -76,6 +79,18 @@ export class SettingsForm {
         form.toggle('Only while sneaking', wandNeedsSneak, {
             description:
                 'The wand waits until you sneak. The item works normally otherwise.',
+        });
+
+        form.divider();
+        form.header('Abilities');
+        form.spacer();
+        form.toggle('On stackable items', stackableAbilities, {
+            description:
+                "Stackables can't carry data, so their abilities are saved in the world and the item gets a blank lore line pointing at them.",
+        });
+        form.toggle('Type any number', typedNumbers, {
+            description:
+                'Number boxes instead of sliders when editing abilities, so values can go past the usual range. Huge values can lag the game or make it stop responding, so raise them a bit at a time.',
         });
 
         let save = false;
@@ -105,6 +120,8 @@ export class SettingsForm {
                 reach: Math.round(reach.getData()),
                 undoDepth: Math.round(undoDepth.getData()),
                 wandNeedsSneak: wandNeedsSneak.getData(),
+                stackableAbilities: stackableAbilities.getData(),
+                typedNumbers: typedNumbers.getData(),
             });
             succeed(viewer, 'Settings saved.');
         } catch (error) {

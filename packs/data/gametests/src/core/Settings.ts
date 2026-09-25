@@ -27,6 +27,8 @@ export interface AddonSettings {
     readonly reach: number;
     readonly undoDepth: number;
     readonly wandNeedsSneak: boolean;
+    readonly stackableAbilities: boolean;
+    readonly typedNumbers: boolean;
 }
 
 export const DEFAULT_SETTINGS: AddonSettings = {
@@ -38,6 +40,8 @@ export const DEFAULT_SETTINGS: AddonSettings = {
     reach: 12,
     undoDepth: 10,
     wandNeedsSneak: false,
+    stackableAbilities: false,
+    typedNumbers: false,
 };
 
 export class Settings {
@@ -84,6 +88,8 @@ export class Settings {
             reach: whole('reach', REACH_RANGE),
             undoDepth: whole('undoDepth', UNDO_RANGE),
             wandNeedsSneak: flag('wandNeedsSneak'),
+            stackableAbilities: flag('stackableAbilities'),
+            typedNumbers: flag('typedNumbers'),
         };
     }
 

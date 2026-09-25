@@ -16,12 +16,15 @@ Everything the menus do. For the command side, see the
 ## Opening it
 
 ```
-/jstash:editor [player]
+/jstash:editor [player] [slot] [panel]
 ```
 
 The first menu picks what to work on: your own inventory, another player, the
 entity you're looking at, or the block you're looking at. Naming a player skips
-straight to their inventory.
+straight to their inventory, and a slot and panel after that skip the rest, so
+`/jstash:editor @s mainhand enchantments` opens the enchantments for whatever
+is in your hand. More in the
+[command reference](commands.md#jstasheditor-and-jstashsettings).
 
 ![Start menu, item menu and the bulk editing menu](images/gallery-reference.png)
 
@@ -40,6 +43,7 @@ Each item opens a hub with whatever applies to it.
 | Enchantments | What's on the item, plus anything it can still take |
 | Book | Pages, title and author, on writable and written books |
 | Can destroy / Can place on | Adventure mode block lists |
+| Abilities | What the item does when you hit, use, mine or wear it, covered in [its own guide](abilities.md) |
 
 ![Enchantment list, adding an enchantment, and the lore editor](images/gallery-item.png)
 
@@ -75,7 +79,7 @@ Pick a group, or tick items off by hand.
 | --- | --- |
 | Armor | Helmet, chestplate, leggings, boots |
 | Armor and hands | Armor plus both hands |
-| Hotbar | Slots 0–8 |
+| Hotbar | Slots 0 to 8 |
 | Everything | The lot, armor and off hand included |
 
 From there: max or remove enchantments, repair, make things unbreakable or
@@ -102,11 +106,12 @@ wand. Point it at a block or an entity and the editor opens on it, already
 selected, so the commands line up with whatever you were just looking at. The
 same entry turns it back.
 
-Any item works and the marker rides along with the item, so handing someone
-your wand hands them a wand.
+Anything that doesn't stack works, and the marker rides along with the item,
+so handing someone your wand hands them a wand. Stackable items have nowhere to
+keep the marker.
 
 The catch is that a wand takes over the item's normal use, which is fine on a
-stick and less fine on the pickaxe you were mining with. **Wand only while
+carrot on a stick and less fine on the pickaxe you were mining with. **Wand only while
 sneaking** in the settings fixes that: sneak and it's a wand, don't and it's
 just a pickaxe.
 
@@ -128,6 +133,8 @@ Stored on the world, so they apply to everyone on it.
 | Reach | 12 | How far **Entity in view** and **Block in view** reach, 4 to 64 blocks. |
 | Undo steps | 10 | How many changes each slot remembers, 1 to 25. |
 | Wand only while sneaking | Off | The wand waits until you sneak. |
+| On stackable items | Off | Lets items that stack have [abilities](abilities.md#stackable-items), saved on the world. |
+| Type any number | Off | Text boxes instead of sliders for ability numbers, so they can go past the usual range. |
 
 Lowering **Undo steps** doesn't wipe history straight away; the oldest steps
 drop off the next time that slot is edited. Enchantment and potion effect

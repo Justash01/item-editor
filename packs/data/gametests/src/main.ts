@@ -7,11 +7,13 @@
  * Website: https://jstash.dev/
  */
 
+import { AbilityRuntime } from './abilities/AbilityRuntime';
 import { Log } from './util/Log';
 import { installCommands } from './commands';
 import { EditorWand } from './ui/EditorWand';
 
 installCommands();
 EditorWand.install();
+AbilityRuntime.install();
 
 Log.get('ItemEditor').info('Item Editor loaded.');

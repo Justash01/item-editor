@@ -9,6 +9,7 @@ import { SlotHandle } from '../core/SlotHandle';
 import { ItemEditorService, jsonEdit } from '../item/ItemEditorService';
 import { ItemPropertyRegistry } from '../item/ItemPropertyRegistry';
 import { Result, fail, ok } from '../util/Result';
+import { visibleLore } from '../abilities/storage';
 import { CommandEnumDefinition } from './EditorCommand';
 import { SelectionCommand } from './SelectionCommand';
 import { numberArg, stringArg } from './args';
@@ -70,7 +71,7 @@ export class LoreCommand extends SelectionCommand {
         }
 
         const updated = this.edit(
-            current.value.getLore(),
+            visibleLore(current.value),
             operation,
             stringArg(args, 1),
             numberArg(args, 2)
