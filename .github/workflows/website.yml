@@ -1,0 +1,19 @@
+name: Website
+
+# jstash.dev pulls the docs and the ability templates from main when it builds
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'packs/data/gametests/src/abilities/templates.ts'
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    env:
+      WEBSITE_DEPLOY_HOOK: ${{ secrets.WEBSITE_DEPLOY_HOOK }}
+    steps:
+      - name: Rebuild the website
+        if: env.WEBSITE_DEPLOY_HOOK != ''
+        run: curl -fsS -X POST "$WEBSITE_DEPLOY_HOOK"
