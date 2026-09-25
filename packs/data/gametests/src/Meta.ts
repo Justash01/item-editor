@@ -27,4 +27,5 @@ export const CommandEnumId = {
     KitOperation: namespaced('kit_op'),
     BlockOperation: namespaced('block_op'),
     Enchantment: namespaced('enchantment'),
+    Panel: namespaced('panel'),
 } as const;

@@ -37,7 +37,7 @@ selection:
 
 ```
 /jstash:select @p[name=Steve] head
-/jstash:set name "Crown of the North"
+/jstash:set name "Staff Helmet"
 /jstash:ench minecraft:protection 4
 ```
 
@@ -151,7 +151,7 @@ as does selecting a container block: read those with
 Sets one [property](#properties), or resets it when you leave the value off.
 
 ```
-/jstash:set name "§6Golden Touch"
+/jstash:set name "§6Starter Sword"
 /jstash:set damage 0
 /jstash:set lore "First line | Second line"
 /jstash:set enchantments "sharpness 5, unbreaking III"
@@ -229,8 +229,8 @@ Lines count from `0`, and `set` and `remove` need one that already exists, so
 on a bare item start with `add`.
 
 ```
-/jstash:lore add "§7Bound to its owner"
-/jstash:lore insert "§5Legendary" 0
+/jstash:lore add "§7Given on first join"
+/jstash:lore insert "§6Event reward" 0
 /jstash:lore remove 2
 ```
 
@@ -267,11 +267,11 @@ Across a [group](#groups), `inspect`, `export`, `apply`, `paste` and
 `/jstash:item apply` or `/jstash:grant`:
 
 ```
-{name:'Crown of the North',enchantments:{'minecraft:protection':4},unbreakable:true}
+{name:'Staff Helmet',enchantments:{'minecraft:protection':4},unbreakable:true}
 ```
 
 ```
-/jstash:item apply "{name:'Ember',lore:['Still warm'],damage:0}"
+/jstash:item apply "{name:'Spare Pickaxe',lore:['Keep in the chest'],damage:0}"
 ```
 
 Only the fields in the document change, and every field is checked first, so
@@ -313,7 +313,7 @@ a mixed hotbar skips a few things and says so.
 
 ```
 /jstash:grant @a minecraft:golden_apple 8
-/jstash:grant @s minecraft:iron_sword 1 "{name:'§7Rusted Blade',damage:220,keepondeath:true}"
+/jstash:grant @s minecraft:iron_sword 1 "{name:'§7Old Sword',damage:220,keepondeath:true}"
 ```
 
 `data` needs `amount` in front of it even when it's `1`, and `amount` inside
@@ -389,14 +389,29 @@ command block's command are out of reach entirely. Block edits can't be undone.
 ## `/jstash:editor` and `/jstash:settings`
 
 ```
-/jstash:editor [player]
+/jstash:editor [player] [slot] [panel]
 /jstash:settings
 ```
 
-Both open menus and both need a player to run them; naming a player on `editor`
-skips the first screen and goes straight to their inventory. The
+Both open menus and both need a player to run them. The
 [editor guide](editor.md) covers what's in there, and the settings are listed
 [at the end of it](editor.md#settings).
+
+On its own `editor` opens the start screen, and naming a player skips straight
+to their inventory. A [slot](#slots) after the player opens that item's menu,
+and a panel after the slot opens just that one screen.
+
+```
+/jstash:editor @s
+/jstash:editor @s head
+/jstash:editor @s mainhand enchantments
+/jstash:editor Steve offhand abilities
+```
+
+The panels are `item` (the item's own menu, same as leaving it out),
+`properties`, `lore`, `enchantments`, `abilities`, `book`, `candestroy` and
+`canplaceon`. If the item can't have the one you asked for, enchantments on a
+stick say, the command tells you and nothing opens.
 
 ---
 
@@ -417,6 +432,7 @@ The values `/jstash:set` changes, and the keys for an
 | `lockmode` | any item | `none`, `inventory` or `slot` | `'slot'` | `none` |
 | `candestroy` | any item | block ids, comma separated | `['minecraft:stone']` | none |
 | `canplaceon` | any item | block ids, comma separated | `['minecraft:dirt']` | none |
+| `abilities` | any item, stackables if [turned on](abilities.md#stackable-items) | a list of abilities | `[{trigger:'hit',action:'lightning'}]` | none |
 
 Anything taking `true`/`false` also takes `yes`/`no`, `on`/`off` and `1`/`0`.
 
@@ -432,13 +448,17 @@ entry is checked for level and clashes before any of it is written.
 
 `lore` also takes `<b>` as a line break, left over from older versions.
 
+`abilities` has enough to it that it gets its own section in the
+[abilities guide](abilities.md#writing-them-by-hand). Like `lore` and
+`enchantments`, the list replaces whatever the item had.
+
 ## Item data documents
 
 Used by `/jstash:grant`, `/jstash:item apply` and `/jstash:item export`. Keys
 are the [properties](#properties) above.
 
 ```
-{name:'Ember',amount:4,lore:['Still warm','§7Handle with care'],enchantments:{fire_aspect:2},unbreakable:true}
+{name:'Event Sword',lore:['Build contest','§71st place'],enchantments:{fire_aspect:2},unbreakable:true}
 ```
 
 It's JSON with a few rules relaxed so it survives being typed into chat. Keys
@@ -464,9 +484,9 @@ To clear a value, pass an empty one where the property allows it (`name:''`,
 | `chest` | `chestplate` | Chestplate |
 | `legs` | `leggings` | Leggings |
 | `feet` | `boots` | Boots |
-| `0`–`35` | | Inventory slot |
+| `0` to `35` | | Inventory slot |
 
-For players, `0`–`8` is the hotbar and `9`–`35` the rest. Other entities have
+For players, `0` to `8` is the hotbar and `9` to `35` the rest. Other entities have
 fewer, and an index past the end tells you the range. Equipment names only work
 on entities that wear equipment.
 
@@ -476,7 +496,7 @@ on entities that wear equipment.
 | --- | --- |
 | `armor` | Helmet, chestplate, leggings, boots |
 | `equipment` | Armor plus both hands |
-| `hotbar` | Slots `0`–`8` |
+| `hotbar` | Slots `0` to `8` |
 | `all` | Everything carried, armor and off hand included |
 
 `armor` and `equipment` need an entity that wears equipment, `hotbar` one with

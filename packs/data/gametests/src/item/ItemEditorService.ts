@@ -209,8 +209,13 @@ export class ItemEditorService {
             if (!planned.ok) {
                 return planned;
             }
-            for (const mutate of planned.value) {
-                mutate(item);
+            const applied = attempt(() => {
+                for (const mutate of planned.value) {
+                    mutate(item);
+                }
+            }, 'Failed to build the item');
+            if (!applied.ok) {
+                return applied;
             }
         }
 

@@ -2,6 +2,7 @@ import { ItemStack } from '@minecraft/server';
 import { Result, fail, ok } from '../../util/Result';
 import { JsonValue, describeJsonType } from '../../util/json';
 import { bulletList } from '../../util/text';
+import { setVisibleLore, visibleLore } from '../../abilities/storage';
 import {
     BaseItemProperty,
     ItemMutation,
@@ -24,16 +25,16 @@ export class LoreProperty extends BaseItemProperty {
     }
 
     toInput(item: ItemStack): string {
-        return item.getLore().join(' | ');
+        return visibleLore(item).join(' | ');
     }
 
     format(item: ItemStack): string | undefined {
-        const lore = item.getLore();
+        const lore = visibleLore(item);
         return lore.length > 0 ? bulletList(lore) : undefined;
     }
 
     override toJson(item: ItemStack): JsonValue | undefined {
-        const lore = item.getLore();
+        const lore = visibleLore(item);
         return lore.length > 0 ? lore : undefined;
     }
 
@@ -58,7 +59,7 @@ export class LoreProperty extends BaseItemProperty {
         }
 
         return ok((target) => {
-            target.setLore(lines);
+            setVisibleLore(target, lines);
         });
     }
 
@@ -69,11 +70,11 @@ export class LoreProperty extends BaseItemProperty {
             .filter((line) => line.length > 0);
 
         return ok((item) => {
-            item.setLore(lines);
+            setVisibleLore(item, lines);
         });
     }
 
     reset(item: ItemStack): void {
-        item.setLore([]);
+        setVisibleLore(item, []);
     }
 }

@@ -1,6 +1,8 @@
 import { ItemComponentTypes, ItemStack } from '@minecraft/server';
 import { idToName, levelText } from '../util/text';
 import { itemRef } from '../util/names';
+import { readAbilities } from '../abilities/Ability';
+import { visibleLore } from '../abilities/storage';
 
 export class ItemSummary {
     private constructor(
@@ -9,7 +11,8 @@ export class ItemSummary {
         readonly lore: string,
         readonly enchantments: string,
         readonly canDestroy: string,
-        readonly canPlaceOn: string
+        readonly canPlaceOn: string,
+        readonly abilities: string
     ) {}
 
     static of(item: ItemStack): ItemSummary {
@@ -19,7 +22,8 @@ export class ItemSummary {
             describeLore(item),
             describeEnchantments(item),
             describeBlockList(item.getCanDestroy()),
-            describeBlockList(item.getCanPlaceOn())
+            describeBlockList(item.getCanPlaceOn()),
+            describeAbilities(item)
         );
     }
 }
@@ -47,7 +51,7 @@ function describeProperties(item: ItemStack): string {
 }
 
 function describeLore(item: ItemStack): string {
-    const lore = item.getLore();
+    const lore = visibleLore(item);
     if (lore.length === 0) {
         return 'No lines yet';
     }
@@ -59,6 +63,14 @@ function describeBlockList(blocks: string[]): string {
         return 'No blocks yet';
     }
     return `${blocks.length} block${blocks.length === 1 ? '' : 's'}`;
+}
+
+function describeAbilities(item: ItemStack): string {
+    const count = readAbilities(item).length;
+    if (count === 0) {
+        return 'None yet';
+    }
+    return `${count} ${count === 1 ? 'ability' : 'abilities'}`;
 }
 
 function describeEnchantments(item: ItemStack): string {

@@ -1,4 +1,4 @@
-import { Block, Entity, Player, world } from '@minecraft/server';
+import { Block, Entity, ItemStack, Player, world } from '@minecraft/server';
 import { BlockEditorService } from '../block/BlockEditorService';
 import { BlockInspector } from '../block/BlockInspector';
 import { InventorySource } from '../core/InventorySource';
@@ -9,8 +9,8 @@ import { ItemClipboard } from '../item/ItemClipboard';
 import { ItemHistory } from '../item/ItemHistory';
 import { ItemInspector } from '../item/ItemInspector';
 import { Log } from '../util/Log';
-import { blockRef, chatMessage } from '../util/names';
-import { Result, describeError } from '../util/Result';
+import { blockRef, chatMessage, itemRef } from '../util/names';
+import { Result, describeError, fail, ok } from '../util/Result';
 import { Color } from '../util/colors';
 import {
     blockName,
@@ -18,6 +18,7 @@ import {
     itemName,
     itemNameWithAmount,
 } from '../util/rawText';
+import { AbilityEditor } from './AbilityEditor';
 import { BlockListEditor } from './BlockListEditor';
 import { BlockStateForm } from './BlockStateForm';
 import { BookEditor } from './BookEditor';
@@ -41,6 +42,19 @@ import {
 
 const log = Log.get('EditorSession');
 
+export const EDITOR_PANELS = [
+    'item',
+    'properties',
+    'lore',
+    'enchantments',
+    'abilities',
+    'book',
+    'candestroy',
+    'canplaceon',
+] as const;
+
+export type EditorPanel = (typeof EDITOR_PANELS)[number];
+
 export class EditorSession {
     private constructor(private readonly viewer: Player) {}
 
@@ -58,6 +72,109 @@ export class EditorSession {
                 log.error(error);
                 failWith(viewer, `The editor crashed: ${describeError(error)}`);
             });
+    }
+
+    // Everything is checked before a screen opens, so a wrong slot or an item
+    // without that panel comes back as a command error instead of a dialog.
+    static openPanel(
+        viewer: Player,
+        panel: EditorPanel,
+        owner: Entity,
+        slotReference: string | undefined
+    ): Result<void> {
+        const source = InventorySource.of(owner);
+        if (!source.ok) {
+            return source;
+        }
+        const handle =
+            slotReference === undefined
+                ? source.value.defaultSlot()
+                : source.value.resolve(slotReference);
+        if (!handle.ok) {
+            return handle;
+        }
+        const item = ItemEditorService.require(handle.value);
+        if (!item.ok) {
+            return item;
+        }
+        const refused = EditorSession.refusal(panel, handle.value, item.value);
+        if (refused) {
+            return fail(refused);
+        }
+
+        ExitSignal.begin(viewer);
+        new EditorSession(viewer)
+            .showPanel(panel, source.value, handle.value)
+            .finally(() => ExitSignal.end(viewer))
+            .catch((error: unknown) => {
+                log.error(error);
+                failWith(viewer, `The editor crashed: ${describeError(error)}`);
+            });
+        return ok(undefined);
+    }
+
+    private static refusal(
+        panel: EditorPanel,
+        handle: SlotHandle,
+        item: ItemStack
+    ): string | undefined {
+        switch (panel) {
+            case 'enchantments':
+                return EnchantmentEditor.supports(handle)
+                    ? undefined
+                    : `${itemRef(item)} can't be enchanted.`;
+            case 'book':
+                return BookEditor.supports(handle)
+                    ? undefined
+                    : `${itemRef(item)} isn't a writable book.`;
+            case 'abilities':
+                return AbilityEditor.supports(handle)
+                    ? undefined
+                    : 'Abilities on stackable items are turned off in /jstash:settings.';
+            default:
+                return undefined;
+        }
+    }
+
+    private async showPanel(
+        panel: EditorPanel,
+        source: InventorySource,
+        handle: SlotHandle
+    ): Promise<void> {
+        switch (panel) {
+            case 'item':
+                return this.openSlot(source, handle);
+            case 'properties':
+                return this.editProperties(
+                    handle,
+                    this.historyKey(source, handle)
+                );
+            case 'lore':
+                return this.report(
+                    await new LoreEditor(this.viewer, handle).browse()
+                );
+            case 'enchantments':
+                return this.report(
+                    await new EnchantmentEditor(this.viewer, handle).browse()
+                );
+            case 'abilities':
+                return this.report(
+                    await new AbilityEditor(this.viewer, handle).browse()
+                );
+            case 'book':
+                return this.report(
+                    await new BookEditor(this.viewer, handle).browse()
+                );
+            case 'candestroy':
+            case 'canplaceon':
+                return this.report(
+                    await new BlockListEditor(
+                        this.viewer,
+                        handle,
+                        panel
+                    ).browse()
+                );
+        }
     }
 
     static openBlock(viewer: Player, block: Block): void {
@@ -313,6 +430,22 @@ export class EditorSession {
                         );
                     },
                     'Pages, title, and author'
+                );
+            }
+
+            if (AbilityEditor.supports(handle)) {
+                menu.option(
+                    'Abilities',
+                    async () => {
+                        acted = true;
+                        this.report(
+                            await new AbilityEditor(
+                                this.viewer,
+                                handle
+                            ).browse()
+                        );
+                    },
+                    summary.abilities
                 );
             }
 
@@ -616,9 +749,18 @@ export class EditorSession {
         }
     }
 
-    private reportWand(outcome: 'bound' | 'released' | undefined): void {
+    private reportWand(
+        outcome: 'bound' | 'released' | 'stackable' | undefined
+    ): void {
         if (outcome === undefined) {
             failWith(this.viewer, 'Hold an item to turn it into a wand.');
+            return;
+        }
+        if (outcome === 'stackable') {
+            failWith(
+                this.viewer,
+                "Wands need an item that doesn't stack, like a tool or a carrot on a stick."
+            );
             return;
         }
 

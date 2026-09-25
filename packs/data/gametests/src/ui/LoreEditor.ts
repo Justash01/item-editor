@@ -9,6 +9,7 @@ import { writableString } from './observables';
 import { ExitSignal } from './ExitSignal';
 import { open } from './screens';
 import { notify } from './feedback';
+import { visibleLore } from '../abilities/storage';
 
 const PREVIEW_LENGTH = 30;
 
@@ -127,7 +128,7 @@ export class LoreEditor {
 
     private read(): Result<string[]> {
         const item = ItemEditorService.require(this.slot);
-        return item.ok ? ok(item.value.getLore()) : item;
+        return item.ok ? ok(visibleLore(item.value)) : item;
     }
 
     private write(lines: string[]): Result<string> {

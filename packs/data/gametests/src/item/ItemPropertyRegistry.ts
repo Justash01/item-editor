@@ -1,6 +1,7 @@
 import { ItemStack } from '@minecraft/server';
 import { Result, fail, ok } from '../util/Result';
 import { ItemProperty, ItemValueKind } from './ItemProperty';
+import { AbilitiesProperty } from './properties/AbilitiesProperty';
 import { AmountProperty } from './properties/AmountProperty';
 import {
     CanDestroyProperty,
@@ -25,6 +26,7 @@ const PROPERTIES: readonly ItemProperty[] = [
     new LockModeProperty(),
     new CanDestroyProperty(),
     new CanPlaceOnProperty(),
+    new AbilitiesProperty(),
 ];
 
 const BY_ID = new Map<string, ItemProperty>(
