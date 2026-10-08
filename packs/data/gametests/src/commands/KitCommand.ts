@@ -88,8 +88,8 @@ export class KitCommand extends EditorCommand {
                     return source;
                 }
                 return operation === 'save'
-                    ? KitStore.save(name, source.value)
-                    : KitStore.give(name, source.value);
+                    ? KitStore.save(name, player, source.value)
+                    : KitStore.give(name, player, source.value);
             });
         });
     }

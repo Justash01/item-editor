@@ -346,11 +346,12 @@ Names take up to 32 letters, digits, spaces, `-` and `_`. Capitals and extra
 spaces make no difference, so `Red Team` and `red team` are the same kit, and
 saving over an existing name replaces it without asking.
 
-Two things catch people out. `save` with a selector matching several players
-saves them one after another under the same name, so only the last one sticks;
-save one player at a time. And `give` puts items wherever there's room, so
-original slots aren't restored and saved armor arrives in the inventory rather
-than worn.
+`give` puts each item back in the slot it was saved from, so armor is worn
+again for example. If that slot is already taken, the item goes wherever there's room, and
+anything that doesn't fit at all is dropped at the player's feet.
+
+`save` with a selector matching several players saves them one after another
+under the same name, so only the last one sticks; save one player at a time.
 
 ## `/jstash:block`
 

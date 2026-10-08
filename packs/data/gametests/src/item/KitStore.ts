@@ -1,4 +1,12 @@
-import { ItemStack, world } from '@minecraft/server';
+import {
+    Container,
+    Entity,
+    EntityComponentTypes,
+    ItemStack,
+    StructureSaveMode,
+    Vector3,
+    world,
+} from '@minecraft/server';
 import { namespaced } from '../Meta';
 import { InventorySource } from '../core/InventorySource';
 import { Result, attempt, fail, ok } from '../util/Result';
@@ -8,13 +16,33 @@ import { itemRef } from '../util/names';
 
 const PREFIX = `${namespaced('kit')}.`;
 
+const COUNTER = namespaced('kit_counter');
+
+const STORAGE_ENTITY = namespaced('kit_storage');
+
 const MAX_ENTRIES = 54;
 
-interface KitEntry {
+// Moving to using structures with storage entities for kits,
+// this way all the item data is preserved and we don't have to try and rebuild it using API.
+interface StructureKit {
+    readonly kind: 'structure';
+    readonly structure: string;
+    readonly slots: readonly string[];
+}
+
+// 3.0 kits were JSON and still give the old way until they're saved again
+interface LegacyKit {
+    readonly kind: 'legacy';
+    readonly entries: readonly LegacyEntry[];
+}
+
+interface LegacyEntry {
     readonly item: string;
     readonly amount: number;
     readonly data: JsonObject;
 }
+
+type StoredKit = StructureKit | LegacyKit;
 
 export class KitStore {
     private constructor() {}
@@ -31,7 +59,11 @@ export class KitStore {
         return typeof world.getDynamicProperty(KitStore.key(name)) === 'string';
     }
 
-    static save(name: string, source: InventorySource): Result<string> {
+    static save(
+        name: string,
+        holder: Entity,
+        source: InventorySource
+    ): Result<string> {
         const clean = KitStore.normalise(name);
         if (!clean.ok) {
             return clean;
@@ -47,77 +79,188 @@ export class KitStore {
             );
         }
 
-        const entries: KitEntry[] = [];
-        for (const handle of occupied) {
-            const item = handle.read();
-            if (item) {
-                entries.push({
-                    item: item.typeId,
-                    amount: item.amount,
-                    data: ItemData.from(item),
-                });
+        const previous = KitStore.read(clean.value);
+        const structure = KitStore.nextStructureId();
+        const corner = blockOf(holder.location);
+        const slots: string[] = [];
+
+        const saved = attempt(() => {
+            const storage = holder.dimension.spawnEntity(
+                STORAGE_ENTITY,
+                centreOf(corner)
+            );
+            try {
+                const container = storageContainer(storage);
+                for (const handle of occupied) {
+                    const item = handle.read();
+                    if (item) {
+                        container.setItem(slots.length, item);
+                        slots.push(handle.reference);
+                    }
+                }
+                world.structureManager.createFromWorld(
+                    structure,
+                    holder.dimension,
+                    corner,
+                    corner,
+                    {
+                        includeBlocks: false,
+                        includeEntities: true,
+                        saveMode: StructureSaveMode.World,
+                    }
+                );
+            } finally {
+                discard(storage);
             }
+        }, `Failed to save kit "${clean.value}"`);
+        if (!saved.ok) {
+            return saved;
         }
 
-        return attempt(() => {
+        const kit: Omit<StructureKit, 'kind'> = { structure, slots };
+        const stored = attempt(() => {
             world.setDynamicProperty(
                 KitStore.key(clean.value),
-                JSON.stringify(entries)
+                JSON.stringify(kit)
             );
-            return `Saved ${entries.length} item(s) as kit "${clean.value}".`;
         }, `Failed to save kit "${clean.value}"`);
+        if (!stored.ok) {
+            deleteStructure(structure);
+            return stored;
+        }
+
+        // Only dropped once the new one is safely saved.
+        if (previous.ok && previous.value.kind === 'structure') {
+            deleteStructure(previous.value.structure);
+        }
+
+        return ok(`Saved ${slots.length} item(s) as kit "${clean.value}".`);
     }
 
-    static give(name: string, source: InventorySource): Result<string> {
-        const entries = KitStore.read(name);
-        if (!entries.ok) {
-            return entries;
+    static give(
+        name: string,
+        holder: Entity,
+        source: InventorySource
+    ): Result<string> {
+        const kit = KitStore.read(name);
+        if (!kit.ok) {
+            return kit;
         }
 
-        let given = 0;
-        let leftOut = 0;
-
-        for (const entry of entries.value) {
-            const built = KitStore.build(entry);
-            if (!built.ok) {
-                return built;
-            }
-
-            const leftover = source.addItem(built.value);
-            if (leftover) {
-                leftOut++;
-            } else {
-                given++;
-            }
+        const given =
+            kit.value.kind === 'structure'
+                ? KitStore.giveStructure(kit.value, holder, source)
+                : KitStore.giveLegacy(kit.value, holder, source);
+        if (!given.ok) {
+            return given;
         }
 
+        const { placed, dropped } = given.value;
         return ok(
-            leftOut === 0
-                ? `Gave ${given} item(s) from kit "${name}" to ${source.displayName}.`
-                : `Gave ${given} item(s) from kit "${name}" to ${source.displayName}; ${leftOut} did not fit.`
+            dropped === 0
+                ? `Gave ${placed} item(s) from kit "${name}" to ${source.displayName}.`
+                : `Gave ${placed} item(s) from kit "${name}" to ${source.displayName}; ${dropped} didn't fit and have been dropped outside.`
         );
     }
 
     static remove(name: string): Result<string> {
+        const kit = KitStore.read(name);
         if (!KitStore.has(name)) {
             return fail(`There is no kit called "${name}".`);
         }
 
         return attempt(() => {
             world.setDynamicProperty(KitStore.key(name), undefined);
+            if (kit.ok && kit.value.kind === 'structure') {
+                deleteStructure(kit.value.structure);
+            }
             return `Deleted kit "${name}".`;
         }, `Failed to delete kit "${name}"`);
     }
 
     static describe(name: string): string {
-        const entries = KitStore.read(name);
-        if (!entries.ok) {
+        const kit = KitStore.read(name);
+        if (!kit.ok) {
             return 'unreadable';
         }
-        return `${entries.value.length} item(s)`;
+        const count =
+            kit.value.kind === 'structure'
+                ? kit.value.slots.length
+                : kit.value.entries.length;
+        return `${count} item(s)`;
     }
 
-    private static build(entry: KitEntry): Result<ItemStack> {
+    // Items go back to the slot they were saved from when it's free, so armor
+    // is worn again, and anywhere there's room otherwise
+    private static giveStructure(
+        kit: StructureKit,
+        holder: Entity,
+        source: InventorySource
+    ): Result<GiveCount> {
+        const structure = world.structureManager.get(kit.structure);
+        if (!structure) {
+            return fail("The kit's saved items are missing. Save it again.");
+        }
+
+        const corner = blockOf(holder.location);
+        return attempt(() => {
+            world.structureManager.place(structure, holder.dimension, corner, {
+                includeBlocks: false,
+                includeEntities: true,
+            });
+            const [storage] = holder.dimension.getEntities({
+                type: STORAGE_ENTITY,
+                location: centreOf(corner),
+                maxDistance: 1,
+            });
+            if (!storage) {
+                throw new Error('the stored items did not load');
+            }
+
+            const count: GiveCount = { placed: 0, dropped: 0 };
+            try {
+                const container = storageContainer(storage);
+                for (let index = 0; index < container.size; index++) {
+                    const item = container.getItem(index);
+                    if (!item) {
+                        continue;
+                    }
+                    const reference = kit.slots[index];
+                    const slot =
+                        reference === undefined
+                            ? undefined
+                            : source.resolve(reference);
+                    if (slot?.ok && !slot.value.hasItem()) {
+                        slot.value.write(item);
+                        count.placed++;
+                    } else {
+                        deliver(item, holder, source, count);
+                    }
+                }
+            } finally {
+                discard(storage);
+            }
+            return count;
+        }, `Failed to give kit`);
+    }
+
+    private static giveLegacy(
+        kit: LegacyKit,
+        holder: Entity,
+        source: InventorySource
+    ): Result<GiveCount> {
+        const count: GiveCount = { placed: 0, dropped: 0 };
+        for (const entry of kit.entries) {
+            const built = KitStore.build(entry);
+            if (!built.ok) {
+                return built;
+            }
+            deliver(built.value, holder, source, count);
+        }
+        return ok(count);
+    }
+
+    private static build(entry: LegacyEntry): Result<ItemStack> {
         const created = attempt(
             () => new ItemStack(entry.item, entry.amount),
             `Failed to recreate ${itemRef(entry.item)}`
@@ -143,7 +286,7 @@ export class KitStore {
         );
     }
 
-    private static read(name: string): Result<KitEntry[]> {
+    private static read(name: string): Result<StoredKit> {
         const stored = world.getDynamicProperty(KitStore.key(name));
         if (typeof stored !== 'string') {
             return fail(
@@ -152,23 +295,40 @@ export class KitStore {
         }
 
         const parsed = parseRelaxedJson(stored);
-        if (!parsed.ok || !Array.isArray(parsed.value)) {
+        if (!parsed.ok) {
             return fail(`Kit "${name}" is unreadable. Save it again.`);
         }
 
-        const entries: KitEntry[] = [];
-        for (const raw of parsed.value) {
-            const entry = KitStore.toEntry(raw);
-            if (!entry.ok) {
-                return fail(`Kit "${name}" is unreadable: ${entry.error}`);
+        const value = parsed.value;
+        if (Array.isArray(value)) {
+            const entries: LegacyEntry[] = [];
+            for (const raw of value) {
+                const entry = KitStore.toEntry(raw);
+                if (!entry.ok) {
+                    return fail(`Kit "${name}" is unreadable: ${entry.error}`);
+                }
+                entries.push(entry.value);
             }
-            entries.push(entry.value);
+            return ok({ kind: 'legacy', entries });
         }
 
-        return ok(entries);
+        if (
+            value !== null &&
+            typeof value === 'object' &&
+            typeof value.structure === 'string' &&
+            Array.isArray(value.slots)
+        ) {
+            return ok({
+                kind: 'structure',
+                structure: value.structure,
+                slots: value.slots.map(String),
+            });
+        }
+
+        return fail(`Kit "${name}" is unreadable. Save it again.`);
     }
 
-    private static toEntry(raw: JsonValue): Result<KitEntry> {
+    private static toEntry(raw: JsonValue): Result<LegacyEntry> {
         if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
             return fail('an entry was not an object.');
         }
@@ -188,6 +348,15 @@ export class KitStore {
                     ? data
                     : {},
         });
+    }
+
+    // Kit names allow spaces and structure ids don't, so structures get a
+    // number instead and the kit record points at it.
+    private static nextStructureId(): string {
+        const stored = world.getDynamicProperty(COUNTER);
+        const next = typeof stored === 'number' ? stored + 1 : 1;
+        world.setDynamicProperty(COUNTER, next);
+        return namespaced(`kit_${next}`);
     }
 
     private static key(name: string): string {
@@ -211,5 +380,65 @@ export class KitStore {
         }
 
         return ok(clean);
+    }
+}
+
+interface GiveCount {
+    placed: number;
+    dropped: number;
+}
+
+// A stack can half fit, so only the leftover goes on the ground.
+function deliver(
+    item: ItemStack,
+    holder: Entity,
+    source: InventorySource,
+    count: GiveCount
+): void {
+    const leftover = source.addItem(item);
+    if (leftover) {
+        holder.dimension.spawnItem(leftover, holder.location);
+        count.dropped++;
+    } else {
+        count.placed++;
+    }
+}
+
+function blockOf(location: Vector3): Vector3 {
+    return {
+        x: Math.floor(location.x),
+        y: Math.floor(location.y),
+        z: Math.floor(location.z),
+    };
+}
+
+function centreOf(corner: Vector3): Vector3 {
+    return { x: corner.x + 0.5, y: corner.y, z: corner.z + 0.5 };
+}
+
+function storageContainer(storage: Entity): Container {
+    const container = storage.getComponent(
+        EntityComponentTypes.Inventory
+    )?.container;
+    if (!container) {
+        throw new Error('the kit storage entity has no inventory');
+    }
+    return container;
+}
+
+// Emptied first so nothing can drop even if removal goes wrong.
+function discard(storage: Entity): void {
+    if (!storage.isValid) {
+        return;
+    }
+    storage.getComponent(EntityComponentTypes.Inventory)?.container?.clearAll();
+    storage.remove();
+}
+
+function deleteStructure(id: string): void {
+    try {
+        world.structureManager.delete(id);
+    } catch {
+        // Already gone, nothing to clean up
     }
 }

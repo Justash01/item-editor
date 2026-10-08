@@ -1,0 +1,50 @@
+{
+    "format_version": "1.26.50",
+    "minecraft:entity": {
+        "description": {
+            "identifier": "jstash:kit_storage",
+            "is_spawnable": false,
+            "is_summonable": true
+        },
+        "component_groups": {
+            "jstash:instant_despawn": {
+                "minecraft:instant_despawn": {}
+            }
+        },
+        "components": {
+            "minecraft:inventory": {
+                "container_type": "container",
+                "inventory_size": 54,
+                "private": true
+            },
+            "minecraft:physics": {
+                "has_gravity": false,
+                "has_collision": false
+            },
+            "minecraft:collision_box": {
+                "width": 0.1,
+                "height": 0.1
+            },
+            "minecraft:damage_sensor": {
+                "triggers": {
+                    "cause": "all",
+                    "deals_damage": "no" 
+                }
+            },
+            "minecraft:health": { 
+                "value": 1, 
+                "max": 1,
+                "min": 1 // so it won't die if players do `/kill @e`
+            }
+        },
+        "events": {
+            "jstash:instant_despawn": {
+                "add": {
+                    "component_groups": [
+                        "jstash:instant_despawn"
+                    ]
+                }
+            }
+        }
+    }
+}
