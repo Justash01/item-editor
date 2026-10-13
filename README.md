@@ -27,7 +27,7 @@ No experimental toggles required.
 2. Apply the behavior pack to your world.
 3. Activate cheats. You'll need operator.
 
-Needs Minecraft Bedrock **1.26.40** or newer.
+Needs Minecraft Bedrock **1.26.50** or newer.
 
 ## Menus
 
