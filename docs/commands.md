@@ -75,8 +75,7 @@ rather than immediately.
 
 The **Chat messages** [setting](editor.md#settings) turns these down to failures
 only, or off entirely. Reports you asked for, like `item inspect` and
-`item list`, print either way. So do the errors the game itself raises for a bad
-argument, since those come from the command parser rather than from the add-on.
+`item list`, print either way. So do Minecraft's own syntax errors.
 
 Item and block names follow the **Localized names**
 [setting](editor.md#settings); with it off you get ids like
@@ -152,7 +151,9 @@ Sets one [property](#properties), or resets it when you leave the value off.
 
 ```
 /jstash:set name "§6Starter Sword"
-/jstash:set damage 0
+/jstash:set damage "0"
+/jstash:set repair "100"
+/jstash:set attack "150"
 /jstash:set lore "First line | Second line"
 /jstash:set enchantments "sharpness 5, unbreaking III"
 /jstash:set candestroy "minecraft:stone, minecraft:dirt"
@@ -162,6 +163,9 @@ Sets one [property](#properties), or resets it when you leave the value off.
 
 `lore` and `enchantments` replace the whole list, so reach for `/jstash:lore`
 or `/jstash:ench` when you only want one entry changed.
+
+Numbers need quotes around them, like `"0"` above, or Minecraft calls it a
+syntax error. Words like `true` are fine without.
 
 Values arrive as text and nothing is checked until the command runs; the error
 says what the property wanted. Properties that don't suit the item, like
@@ -231,8 +235,12 @@ on a bare item start with `add`.
 ```
 /jstash:lore add "§7Given on first join"
 /jstash:lore insert "§6Event reward" 0
-/jstash:lore remove 2
+/jstash:lore remove "2"
 ```
+
+`remove` takes its line number where the text would go, so it needs quotes
+like any other number in a text argument. The line number after a text value,
+as in `insert`, doesn't.
 
 A line here can contain `|` and stays one line, unlike `/jstash:set lore`,
 which splits on it.
@@ -316,10 +324,19 @@ a mixed hotbar skips a few things and says so.
 /jstash:grant @s minecraft:iron_sword 1 "{name:'§7Old Sword',damage:220,keepondeath:true}"
 ```
 
+```
+/jstash:grant @s minecraft:arrow 64 "{datavalue:26}"
+/jstash:grant @s minecraft:potion 1 "{datavalue:21,name:'§cHealing Flask'}"
+```
+
+`datavalue` is the number vanilla `/give` takes after the amount, so it makes
+tipped arrows, potions and anything else that comes in variants. It only works
+here; `/jstash:item apply` refuses it.
+
 `data` needs `amount` in front of it even when it's `1`, and `amount` inside
 the document wins over the argument. The document is checked before anything is
 created, so a bad one means nobody gets anything. Whatever doesn't fit in a
-full inventory is **not dropped**, just counted in the message.
+full inventory drops at the player's feet, the same as kits.
 
 ## `/jstash:kit`
 
@@ -344,7 +361,8 @@ are stored on the world. `target` defaults to whoever ran the command.
 
 Names take up to 32 letters, digits, spaces, `-` and `_`. Capitals and extra
 spaces make no difference, so `Red Team` and `red team` are the same kit, and
-saving over an existing name replaces it without asking.
+saving over an existing name replaces it without asking. A name that's only a
+number needs quotes, like `"1"`.
 
 `give` puts each item back in the slot it was saved from, so armor is worn
 again for example. If that slot is already taken, the item goes wherever there's room, and
@@ -376,6 +394,9 @@ you ran the command from.
 /jstash:block set ~ ~ ~1 open_bit true
 /jstash:block contents 10 64 -20
 ```
+
+A number as the state value needs quotes, as in `set ~ ~ ~ age "3"`, for the
+same reason as [`/jstash:set`](#jstashset).
 
 ![Chat output of /jstash:block inspect](images/block-inspect.png)
 
@@ -427,7 +448,10 @@ The values `/jstash:set` changes, and the keys for an
 | `amount` | stackable items | 1 to the stack limit | `16` | `1` |
 | `lore` | any item | lines separated by `\|` | `['line','line']` | no lore |
 | `damage` | items with durability | 0 to max durability | `100` | `0` |
+| `repair` | items with durability | durability to give back | `100` | |
 | `unbreakable` | items with durability | `true` / `false` | `true` | `false` |
+| `attack` | tools, weapons, armor | percent of normal damage, 0 to 1000 | `150` | `100` |
+| `protection` | tools, weapons, armor | percent of damage blocked, 0 to 100 | `25` | `0` |
 | `enchantments` | enchantable items | `"sharpness 5, unbreaking III"` | `{sharpness:5,unbreaking:3}` | none |
 | `keepondeath` | any item | `true` / `false` | `true` | `false` |
 | `lockmode` | any item | `none`, `inventory` or `slot` | `'slot'` | `none` |
@@ -438,8 +462,27 @@ The values `/jstash:set` changes, and the keys for an
 Anything taking `true`/`false` also takes `yes`/`no`, `on`/`off` and `1`/`0`.
 
 `damage` is durability used up rather than durability left, so `0` is a fresh
-item; `inspect` shows both numbers. `lockmode` `inventory` stops the item
-leaving the inventory and `slot` pins it to its slot as well. `candestroy` and
+item; `inspect` shows both numbers. `repair` works the other way round: it
+gives back that much from whatever the item has now, stopping at fully
+repaired, so `repair 100` on worn boots doesn't care how worn they were. It's
+never exported or copied.
+
+`attack` and `protection` only go on items that don't stack, and each one
+puts a line at the top of the lore: "+50% Damage Dealt" for attack,
+"-20% Damage Taken" for protection. Turn off
+**Apply stats information automatically** in `/jstash:settings` if you'd rather
+write your own. Both only work for players.
+`attack` scales the damage of hits with the item and of arrows or tridents it
+shoots, so a bow with `attack 200` fires arrows that hit twice as hard.
+`protection` counts while the item is worn or in the off hand, and pieces add
+up to 100, which blocks everything except `/kill` and the void. There's no
+mining speed stat; a While held ability giving
+Haste is the closest thing.
+
+Both stats apply on top of armor, enchantments and critical hits. `attack 150` on a sword with Sharpness
+is half again its normal hit, Sharpness included.
+
+`lockmode` `inventory` stops the item leaving the inventory and `slot` pins it to its slot as well. `candestroy` and
 `canplaceon` only matter in Adventure mode, and every block id is checked.
 
 `enchantments` is the fiddly one. Levels take numbers or Roman numerals, names

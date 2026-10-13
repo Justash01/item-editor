@@ -20,6 +20,14 @@ import {
     textOf,
 } from './fields';
 import { BLOCK_GROUPS } from './mining';
+import {
+    ALL_CHECKS,
+    NUMBER_CHECKS,
+    OTHER_CHECKS,
+    RANGE_CHECKS,
+    SCORE_CHECKS,
+    describeScoreCheck,
+} from './scores';
 import { storeAbilities, storedAbilities } from './storage';
 import { FieldSpec, TRIGGERS, Trigger, Values } from './types';
 
@@ -43,8 +51,21 @@ export interface Ability {
     readonly steps: readonly Step[];
 }
 
-const AGAINST: readonly Trigger[] = ['hit', 'kill', 'shoot', 'hurt'];
+const AGAINST: readonly Trigger[] = [
+    'hit',
+    'kill',
+    'shoot',
+    'hurt',
+    'interact',
+];
 const EVERY_TRIGGER = TRIGGERS.map((entry) => entry.id);
+const WITH_TARGET = TRIGGERS.filter((entry) => entry.target).map(
+    (entry) => entry.id
+);
+const REPEATING: readonly Trigger[] = ['held', 'worn', 'using'];
+const TOLD: readonly Trigger[] = ['use', 'eat', 'interact'];
+
+const ANY = { value: 'any', label: "Doesn't matter" };
 
 export const CONDITIONS: readonly FieldSpec[] = [
     choiceField(
@@ -80,6 +101,137 @@ export const CONDITIONS: readonly FieldSpec[] = [
         triggers: AGAINST,
         showWhen: { key: 'victims', values: ['type'] },
     },
+    choiceField(
+        'ground',
+        'Standing',
+        [
+            ANY,
+            { value: 'ground', label: 'Only on the ground' },
+            { value: 'air', label: 'Only in the air' },
+        ],
+        'any'
+    ),
+    numberField('fall', 'Falling at least, in blocks', 0, 20, 0.5, 0, {
+        triggers: ['hit'],
+        description: 'For smash hits. 0 means it fires standing still too.',
+    }),
+    choiceField(
+        'water',
+        'In water',
+        [
+            ANY,
+            { value: 'only', label: 'Only in water' },
+            { value: 'never', label: 'Only out of water' },
+        ],
+        'any'
+    ),
+    choiceField(
+        'time',
+        'Time of day',
+        [
+            ANY,
+            { value: 'sunrise', label: 'Sunrise' },
+            { value: 'day', label: 'Day' },
+            { value: 'noon', label: 'Around noon' },
+            { value: 'sunset', label: 'Sunset' },
+            { value: 'night', label: 'Night' },
+            { value: 'midnight', label: 'Around midnight' },
+        ],
+        'any'
+    ),
+    choiceField(
+        'dimension',
+        'Dimension',
+        [
+            ANY,
+            { value: 'overworld', label: 'Overworld' },
+            { value: 'nether', label: 'Nether' },
+            { value: 'the_end', label: 'The End' },
+        ],
+        'any'
+    ),
+    numberField('health', 'Your health at most, in percent', 1, 100, 1, 100, {
+        ceiling: 100,
+        description: '100 means any health.',
+    }),
+    numberField(
+        'targetHealth',
+        'Target health at most, in percent',
+        1,
+        100,
+        1,
+        100,
+        {
+            ceiling: 100,
+            triggers: WITH_TARGET,
+            description: '100 means any health. Low values make an execute.',
+        }
+    ),
+    choiceField(
+        'tagCheck',
+        'Tag',
+        [
+            ANY,
+            { value: 'has', label: 'Only with a tag' },
+            { value: 'lacks', label: 'Only without a tag' },
+        ],
+        'any'
+    ),
+    {
+        kind: 'text',
+        key: 'tag',
+        label: 'Tag name',
+        default: 'vip',
+        example: 'red_team',
+        maxLength: 64,
+        showWhen: { key: 'tagCheck', values: ['has', 'lacks'] },
+    },
+    choiceField('scoreCheck', 'Score', [ANY, ...SCORE_CHECKS], 'any'),
+    choiceField(
+        'scoreWho',
+        'Whose score',
+        [
+            { value: 'self', label: 'Yours' },
+            { value: 'target', label: "The target's" },
+        ],
+        'self',
+        {
+            triggers: WITH_TARGET,
+            showWhen: { key: 'scoreCheck', values: ALL_CHECKS },
+        }
+    ),
+    {
+        kind: 'text',
+        key: 'scoreObjective',
+        label: 'Scoreboard objective',
+        default: 'mana',
+        example: 'kills',
+        maxLength: 32,
+        showWhen: { key: 'scoreCheck', values: ALL_CHECKS },
+    },
+    numberField(
+        'scoreValue',
+        'Number, or where the range starts',
+        0,
+        100,
+        1,
+        10,
+        {
+            showWhen: { key: 'scoreCheck', values: NUMBER_CHECKS },
+        }
+    ),
+    numberField('scoreMax', 'Where the range ends', 0, 100, 1, 20, {
+        showWhen: { key: 'scoreCheck', values: RANGE_CHECKS },
+    }),
+    {
+        kind: 'text',
+        key: 'scoreOther',
+        label: 'The other objective',
+        default: 'max_mana',
+        example: 'deaths',
+        maxLength: 32,
+        showWhen: { key: 'scoreCheck', values: OTHER_CHECKS },
+    },
     choiceField('blocks', 'Only when mining', BLOCK_GROUPS, 'any', {
         triggers: ['mine'],
     }),
@@ -101,6 +253,22 @@ export const TIMING: readonly FieldSpec[] = [
         ceiling: 100,
     }),
     numberField('cooldown', 'Cooldown, in seconds', 0, 120, 0.5, 0),
+    numberField('interval', 'Fires every, in seconds', 0.5, 60, 0.5, 0.5, {
+        triggers: REPEATING,
+    }),
+    numberField('every', 'Only every Nth time', 1, 20, 1, 1, {
+        ceiling: 1000,
+        description: '3 fires on the 3rd, 6th, 9th time and so on.',
+    }),
+    choiceField(
+        'pick',
+        'Steps',
+        [
+            { value: 'all', label: 'Run all of them, in order' },
+            { value: 'one', label: 'Run one at random' },
+        ],
+        'all'
+    ),
 ];
 
 export const COSTS: readonly FieldSpec[] = [
@@ -108,11 +276,38 @@ export const COSTS: readonly FieldSpec[] = [
         triggers: EVERY_TRIGGER.filter((trigger) => trigger !== 'break'),
     }),
     numberField('levels', 'XP levels per use', 0, 30, 1, 0),
+    flagField('payScore', 'Costs score points', false),
+    {
+        kind: 'text',
+        key: 'costObjective',
+        label: 'Scoreboard objective',
+        default: 'mana',
+        example: 'mana',
+        maxLength: 32,
+        showWhen: { key: 'payScore', values: ['true'] },
+    },
+    numberField('scoreCost', 'Points per use', 1, 100, 1, 10, {
+        showWhen: { key: 'payScore', values: ['true'] },
+    }),
+    flagField('payItem', 'Uses up an item from your inventory', false),
+    {
+        kind: 'text',
+        key: 'ammo',
+        label: 'Item id',
+        default: 'minecraft:arrow',
+        example: 'minecraft:redstone',
+        maxLength: 64,
+        check: 'item',
+        showWhen: { key: 'payItem', values: ['true'] },
+    },
+    numberField('ammoCount', 'How many per use', 1, 64, 1, 1, {
+        showWhen: { key: 'payItem', values: ['true'] },
+    }),
     flagField('consume', 'Uses up one of the stack', false, {
         triggers: ['use'],
     }),
     flagField('notice', "Tell me when it's not ready", true, {
-        triggers: ['use'],
+        triggers: TOLD,
     }),
 ];
 
@@ -166,6 +361,17 @@ export function abilityTerms(ability: Ability): string {
     if (numberOf(settings, 'cooldown') > 0) {
         terms.push(`${numberOf(settings, 'cooldown')}s cooldown`);
     }
+    const interval = numberOf(settings, 'interval');
+    if (interval > 0.5) {
+        terms.push(`every ${interval}s`);
+    }
+    const every = numberOf(settings, 'every');
+    if (every > 1) {
+        terms.push(`every ${ordinal(every)} time`);
+    }
+    if (textOf(settings, 'pick') === 'one') {
+        terms.push('one step at random');
+    }
 
     switch (textOf(settings, 'sneak')) {
         case 'only':
@@ -188,6 +394,8 @@ export function abilityTerms(ability: Ability): string {
             break;
     }
 
+    terms.push(...situationTerms(settings));
+
     const blocks = textOf(settings, 'blocks');
     if (blocks === 'list') {
         const count = splitList(textOf(settings, 'blockList')).length;
@@ -203,10 +411,86 @@ export function abilityTerms(ability: Ability): string {
     if (numberOf(settings, 'levels') > 0) {
         terms.push(`${numberOf(settings, 'levels')} levels a use`);
     }
+    if (flagOf(settings, 'payScore')) {
+        terms.push(
+            `${numberOf(settings, 'scoreCost')} ${textOf(settings, 'costObjective')} a use`
+        );
+    }
+    if (flagOf(settings, 'payItem')) {
+        terms.push(
+            `uses ${numberOf(settings, 'ammoCount')} ${idToName(textOf(settings, 'ammo'))}`
+        );
+    }
     if (flagOf(settings, 'consume')) {
         terms.push('uses one up');
     }
     return terms.join(', ');
+}
+
+function situationTerms(settings: Values): string[] {
+    const terms: string[] = [];
+    const pick = (key: string, labels: Record<string, string>): void => {
+        const label = labels[textOf(settings, key)];
+        if (label) {
+            terms.push(label);
+        }
+    };
+    pick('ground', { ground: 'on the ground', air: 'in the air' });
+    pick('water', { only: 'in water', never: 'out of water' });
+    pick('time', {
+        sunrise: 'at sunrise',
+        day: 'by day',
+        noon: 'around noon',
+        sunset: 'at sunset',
+        night: 'at night',
+        midnight: 'around midnight',
+    });
+    pick('dimension', {
+        overworld: 'in the Overworld',
+        nether: 'in the Nether',
+        the_end: 'in the End',
+    });
+
+    if (numberOf(settings, 'fall') > 0) {
+        terms.push(`after falling ${numberOf(settings, 'fall')}+ blocks`);
+    }
+    const health = numberOf(settings, 'health');
+    if (health > 0 && health < 100) {
+        terms.push(`at ${health}% health or less`);
+    }
+    const target = numberOf(settings, 'targetHealth');
+    if (target > 0 && target < 100) {
+        terms.push(`target at ${target}% or less`);
+    }
+
+    const tag = textOf(settings, 'tag');
+    if (textOf(settings, 'tagCheck') === 'has') {
+        terms.push(`tagged ${tag}`);
+    } else if (textOf(settings, 'tagCheck') === 'lacks') {
+        terms.push(`not tagged ${tag}`);
+    }
+    const score = describeScoreCheck(settings);
+    if (score) {
+        terms.push(score);
+    }
+    return terms;
+}
+
+function ordinal(value: number): string {
+    const tens = value % 100;
+    if (tens >= 11 && tens <= 13) {
+        return `${value}th`;
+    }
+    switch (value % 10) {
+        case 1:
+            return `${value}st`;
+        case 2:
+            return `${value}nd`;
+        case 3:
+            return `${value}rd`;
+        default:
+            return `${value}th`;
+    }
 }
 
 export function parseStep(raw: JsonValue, trigger: Trigger): Result<Step> {

@@ -36,8 +36,8 @@ Needs Minecraft Bedrock **1.26.40** or newer.
 ```
 
 Pick your own inventory, another player, or whatever you're looking at, then
-pick an item. Name, lore, enchantments, durability and flags all live in there,
-along with book pages, sign text and block states.
+pick an item. Name, lore, enchantments, durability, attack and protection all
+live in there, along with book pages, sign text and block states.
 
 ![Start menu, item menu and properties form](docs/images/gallery-editor.png)
 
@@ -51,8 +51,9 @@ that to a whole set of armor at once. The
 Items can also do things by themselves. A sword that calls lightning one hit in
 five, boots that give night vision, a pickaxe that takes the whole ore vein and
 drops the ingots in your pocket. Pick what sets it off, anything from a hit to
-simply wearing the thing, then line up to eight steps behind it. There are 18
-templates if you'd rather start from something that already works.
+simply wearing the thing, then line up to eight steps behind it. There are 30
+templates if you'd rather start from something that already works, and you can
+save your own.
 
 ```
 /jstash:editor @s mainhand abilities
@@ -86,8 +87,7 @@ for you. Pick any item, set it up, and copy the command.
 
 ## What it can't do
 
-- **Enchantment levels cannot go beyond vanilla maximum**, and enchantments that
-  clash are refused. That's the game limitation.
+- **Enchantment levels cannot go beyond vanilla maximum**, and incompatible enchantments cannot be combined. These are game level limitations that cannot be bypassed using Add-Ons alone.
 - **Food, potion and cooldown values are read-only.** You can look at them and
   that's it.
 - **Blocks only expose their states**, plus sign text and container contents.

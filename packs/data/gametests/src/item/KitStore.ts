@@ -1,24 +1,22 @@
-import {
-    Container,
-    Entity,
-    EntityComponentTypes,
-    ItemStack,
-    StructureSaveMode,
-    Vector3,
-    world,
-} from '@minecraft/server';
+import { Entity, ItemStack, StructureSaveMode, world } from '@minecraft/server';
 import { namespaced } from '../Meta';
 import { InventorySource } from '../core/InventorySource';
 import { Result, attempt, fail, ok } from '../util/Result';
 import { JsonObject, JsonValue, parseRelaxedJson } from '../util/json';
 import { ItemData } from './ItemData';
 import { itemRef } from '../util/names';
+import {
+    STORAGE_ENTITY,
+    blockOf,
+    centreOf,
+    discardStorage,
+    spawnStorage,
+    storageContainer,
+} from './StorageEntity';
 
 const PREFIX = `${namespaced('kit')}.`;
 
 const COUNTER = namespaced('kit_counter');
-
-const STORAGE_ENTITY = namespaced('kit_storage');
 
 const MAX_ENTRIES = 54;
 
@@ -85,10 +83,7 @@ export class KitStore {
         const slots: string[] = [];
 
         const saved = attempt(() => {
-            const storage = holder.dimension.spawnEntity(
-                STORAGE_ENTITY,
-                centreOf(corner)
-            );
+            const storage = spawnStorage(holder.dimension, corner);
             try {
                 const container = storageContainer(storage);
                 for (const handle of occupied) {
@@ -110,7 +105,7 @@ export class KitStore {
                     }
                 );
             } finally {
-                discard(storage);
+                discardStorage(storage);
             }
         }, `Failed to save kit "${clean.value}"`);
         if (!saved.ok) {
@@ -238,7 +233,7 @@ export class KitStore {
                     }
                 }
             } finally {
-                discard(storage);
+                discardStorage(storage);
             }
             return count;
         }, `Failed to give kit`);
@@ -404,41 +399,8 @@ function deliver(
     }
 }
 
-function blockOf(location: Vector3): Vector3 {
-    return {
-        x: Math.floor(location.x),
-        y: Math.floor(location.y),
-        z: Math.floor(location.z),
-    };
-}
-
-function centreOf(corner: Vector3): Vector3 {
-    return { x: corner.x + 0.5, y: corner.y, z: corner.z + 0.5 };
-}
-
-function storageContainer(storage: Entity): Container {
-    const container = storage.getComponent(
-        EntityComponentTypes.Inventory
-    )?.container;
-    if (!container) {
-        throw new Error('the kit storage entity has no inventory');
-    }
-    return container;
-}
-
-// Emptied first so nothing can drop even if removal goes wrong.
-function discard(storage: Entity): void {
-    if (!storage.isValid) {
-        return;
-    }
-    storage.getComponent(EntityComponentTypes.Inventory)?.container?.clearAll();
-    storage.remove();
-}
-
 function deleteStructure(id: string): void {
-    try {
+    if (world.structureManager.get(id)) {
         world.structureManager.delete(id);
-    } catch {
-        // Already gone, nothing to clean up
     }
 }

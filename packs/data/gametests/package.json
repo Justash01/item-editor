@@ -1,6 +1,6 @@
 {
     "name": "item-editor-gametests",
-    "version": "3.0.0",
+    "version": "4.0.0",
     "description": "Scripts for the Item Editor behavior pack.",
     "type": "module",
     "private": true,

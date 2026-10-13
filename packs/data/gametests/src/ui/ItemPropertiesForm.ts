@@ -6,13 +6,14 @@ import {
     PropertyEdit,
     textEdit,
 } from '../item/ItemEditorService';
-import { ItemProperty } from '../item/ItemProperty';
+import { ItemMutation, ItemProperty } from '../item/ItemProperty';
 import { ItemPropertyRegistry } from '../item/ItemPropertyRegistry';
 import { Result, ok } from '../util/Result';
 import { itemName } from '../util/rawText';
 import {
     clamp,
     scriptBoolean,
+    scriptNumber,
     scriptString,
     writableBoolean,
     writableNumber,
@@ -24,6 +25,7 @@ interface Bound {
     readonly property: ItemProperty;
     readonly original: string;
     readonly read: () => string;
+    readonly refresh?: (draft: ItemStack) => void;
 }
 
 export class ItemPropertiesForm {
@@ -34,15 +36,15 @@ export class ItemPropertiesForm {
 
     static forItem(item: ItemStack): ItemPropertiesForm {
         const properties = ItemPropertyRegistry.supportedBy(item).filter(
-            (property) =>
-                property.valueKind !== 'composite' &&
-                isRenderable(property, item)
+            (property) => property.valueKind !== 'composite'
         );
         return new ItemPropertiesForm(item, properties);
     }
 
     get isEmpty(): boolean {
-        return this.properties.length === 0;
+        return !this.properties.some((property) =>
+            isRenderable(property, this.item)
+        );
     }
 
     async prompt(viewer: Player, slot: SlotHandle): Promise<Result<string>> {
@@ -53,9 +55,20 @@ export class ItemPropertiesForm {
         const rejected = new Set<string>();
         const saveDisabled = scriptBoolean(false);
 
-        const bound = this.properties.map((property) =>
-            this.bind(form, property, rejected, saveDisabled)
-        );
+        const bound: Bound[] = [];
+        let refreshing = false;
+        const changed = (): void => {
+            if (!refreshing) {
+                refreshing = true;
+                this.refresh(bound);
+                refreshing = false;
+            }
+        };
+        for (const property of this.properties) {
+            bound.push(
+                this.bind(form, property, rejected, saveDisabled, changed)
+            );
+        }
 
         let save = false;
         form.divider();
@@ -88,11 +101,28 @@ export class ItemPropertiesForm {
             : ItemEditorService.applyAll(slot, edits);
     }
 
+    private refresh(bound: readonly Bound[]): void {
+        const pending = bound.map((entry) => pendingEdit(entry, this.item));
+        bound.forEach((entry, index) => {
+            if (!entry.refresh) {
+                return;
+            }
+            const draft = this.item.clone();
+            pending.forEach((mutate, at) => {
+                if (mutate && at !== index) {
+                    mutate(draft);
+                }
+            });
+            entry.refresh(draft);
+        });
+    }
+
     private bind(
         form: CustomForm,
         property: ItemProperty,
         rejected: Set<string>,
-        saveDisabled: ObservableBoolean
+        saveDisabled: ObservableBoolean,
+        changed: () => void
     ): Bound {
         const control = property.control(this.item);
         const original = property.toInput(this.item);
@@ -115,13 +145,17 @@ export class ItemPropertiesForm {
         switch (control.kind) {
             case 'text': {
                 const value = writableString(original);
-                value.subscribe((raw) => validate(raw));
+                value.subscribe((raw) => {
+                    validate(raw);
+                    changed();
+                });
                 form.textField(property.label, value, options);
                 return { property, original, read: () => value.getData() };
             }
 
             case 'toggle': {
                 const value = writableBoolean(original === 'true');
+                value.subscribe(() => changed());
                 form.toggle(property.label, value, options);
                 return {
                     property,
@@ -138,15 +172,36 @@ export class ItemPropertiesForm {
                         control.max
                     )
                 );
-                value.subscribe((raw) => validate(String(Math.round(raw))));
-                form.slider(property.label, value, control.min, control.max, {
+                const min = scriptNumber(control.min);
+                const max = scriptNumber(control.max);
+                const visible = scriptBoolean(control.max > control.min);
+                value.subscribe((raw) => {
+                    validate(String(Math.round(raw)));
+                    changed();
+                });
+                form.slider(property.label, value, min, max, {
                     ...options,
                     step: control.step,
+                    visible,
                 });
                 return {
                     property,
                     original,
                     read: () => String(Math.round(value.getData())),
+                    refresh: (draft) => {
+                        const live = property.control(draft);
+                        if (live.kind !== 'slider') {
+                            return;
+                        }
+                        min.setData(live.min);
+                        max.setData(live.max);
+                        visible.setData(live.max > live.min);
+                        const current = value.getData();
+                        const fitted = clamp(current, live.min, live.max);
+                        if (fitted !== current) {
+                            value.setData(fitted);
+                        }
+                    },
                 };
             }
 
@@ -155,6 +210,7 @@ export class ItemPropertiesForm {
                 const value = writableNumber(
                     Math.max(choices.indexOf(original), 0)
                 );
+                value.subscribe(() => changed());
                 form.dropdown(
                     property.label,
                     value,
@@ -169,6 +225,15 @@ export class ItemPropertiesForm {
             }
         }
     }
+}
+
+function pendingEdit(entry: Bound, item: ItemStack): ItemMutation | undefined {
+    const raw = entry.read();
+    if (raw === entry.original) {
+        return undefined;
+    }
+    const parsed = entry.property.parse(raw, item);
+    return parsed.ok ? parsed.value : undefined;
 }
 
 function isRenderable(property: ItemProperty, item: ItemStack): boolean {

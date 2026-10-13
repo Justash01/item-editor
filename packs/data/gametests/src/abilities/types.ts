@@ -17,7 +17,12 @@ export type Trigger =
     | 'held'
     | 'worn'
     | 'mine'
-    | 'break';
+    | 'break'
+    | 'eat'
+    | 'interact'
+    | 'jump'
+    | 'sneak'
+    | 'using';
 
 interface TriggerInfo {
     readonly id: Trigger;
@@ -68,6 +73,32 @@ export const TRIGGERS: readonly TriggerInfo[] = [
         label: 'While worn',
         detail: 'Twice a second while it sits in an armor slot or your off-hand',
     },
+    {
+        id: 'interact',
+        label: 'On right-click mob',
+        detail: 'When you right-click a mob or player with it',
+        target: 'the mob you clicked',
+    },
+    {
+        id: 'eat',
+        label: 'On eat',
+        detail: 'When you finish eating or drinking it',
+    },
+    {
+        id: 'using',
+        label: 'While using',
+        detail: 'Twice a second while you draw, aim, eat or drink with it. Swords and shields never count as in use',
+    },
+    {
+        id: 'jump',
+        label: 'On jump',
+        detail: 'When you press jump while holding or wearing it, in the air too',
+    },
+    {
+        id: 'sneak',
+        label: 'On sneak',
+        detail: 'When you start sneaking while holding or wearing it',
+    },
     { id: 'mine', label: 'On mine', detail: 'When you break a block with it' },
     { id: 'break', label: 'On break', detail: 'When the item itself breaks' },
 ];
@@ -99,6 +130,8 @@ export interface AbilityContext {
     readonly location: Vector3;
     readonly dimension: Dimension;
     readonly damage?: number;
+    // Blocks fallen since the holder last stood on something, for smash hits.
+    readonly fall?: number;
     readonly mined?: MinedBlock;
 }
 
@@ -149,7 +182,7 @@ export type FieldSpec = FieldExtras &
               readonly example: string;
               readonly maxLength: number;
               readonly stripSlash?: boolean;
-              readonly check?: 'block' | 'blocks' | 'entity';
+              readonly check?: 'block' | 'blocks' | 'entity' | 'item';
               readonly presets?: readonly ChoiceOption[];
           }
         | {

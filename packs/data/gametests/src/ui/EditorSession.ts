@@ -1,4 +1,5 @@
 import { Block, Entity, ItemStack, Player, world } from '@minecraft/server';
+import { CustomForm } from '@minecraft/server-ui';
 import { BlockEditorService } from '../block/BlockEditorService';
 import { BlockInspector } from '../block/BlockInspector';
 import { InventorySource } from '../core/InventorySource';
@@ -6,6 +7,7 @@ import { Settings } from '../core/Settings';
 import { SlotHandle } from '../core/SlotHandle';
 import { ItemEditorService } from '../item/ItemEditorService';
 import { ItemClipboard } from '../item/ItemClipboard';
+import { ItemData } from '../item/ItemData';
 import { ItemHistory } from '../item/ItemHistory';
 import { ItemInspector } from '../item/ItemInspector';
 import { Log } from '../util/Log';
@@ -39,6 +41,8 @@ import {
     playSuccess,
     succeed,
 } from './feedback';
+import { writableString } from './observables';
+import { open } from './screens';
 
 const log = Log.get('EditorSession');
 
@@ -502,6 +506,14 @@ export class EditorSession {
                     ItemClipboard.has(this.viewer)
                         ? `Apply the data copied from ${ItemClipboard.label(this.viewer)}`
                         : 'Nothing copied yet'
+                )
+                .option(
+                    'Copy as command',
+                    async () => {
+                        acted = true;
+                        await this.showCommand(handle);
+                    },
+                    'A /jstash:grant line that makes this item, to share or keep'
                 );
 
             menu.section('Actions').option(
@@ -633,6 +645,27 @@ export class EditorSession {
             return;
         }
         this.report(outcome);
+    }
+
+    private async showCommand(handle: SlotHandle): Promise<void> {
+        const item = ItemEditorService.require(handle);
+        if (!item.ok) {
+            await this.alert(item.error);
+            return;
+        }
+        const command = ItemData.grantCommand(item.value);
+        const form = new CustomForm(this.viewer, itemName(item.value));
+        form.label(
+            'Select the text and copy it. Pasted into chat or a command block, it gives whoever runs it the same item.'
+        );
+        form.textField('Command', writableString(command), {
+            description: `${command.length} characters`,
+        });
+        form.closeButton();
+        const shown = await open(form, this.viewer);
+        if (!shown.ok) {
+            await this.alert(shown.error);
+        }
     }
 
     private async openBlock(block: Block): Promise<void> {

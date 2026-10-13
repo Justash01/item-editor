@@ -41,6 +41,60 @@ export const TEMPLATES: readonly Template[] = [
         },
     },
     {
+        label: 'Third strike',
+        detail: 'Every third hit calls down lightning',
+        ability: {
+            trigger: 'hit',
+            every: 3,
+            do: [{ action: 'lightning' }],
+        },
+    },
+    {
+        label: 'Execute',
+        detail: 'Big extra damage on anything under a third of its health',
+        ability: {
+            trigger: 'hit',
+            targetHealth: 33,
+            do: [{ action: 'damage', amount: 10 }],
+        },
+    },
+    {
+        label: 'Mace smash',
+        detail: 'Falling hits deal more the further you fell and knock mobs back',
+        ability: {
+            trigger: 'hit',
+            fall: 1.5,
+            do: [
+                { action: 'smash', perBlock: 2 },
+                {
+                    action: 'knockback',
+                    strength: 1.5,
+                    target: 'around',
+                    radius: 3,
+                },
+                { action: 'safefall', seconds: 2 },
+            ],
+        },
+    },
+    {
+        label: 'Wind burst',
+        detail: 'A falling hit bounces you back up into the air',
+        ability: {
+            trigger: 'hit',
+            fall: 1.5,
+            do: [
+                { action: 'launch', strength: 1.5, target: 'self' },
+                { action: 'safefall', seconds: 5 },
+                { action: 'sound', sound: 'wind_charge.burst', at: 'self' },
+                {
+                    action: 'particle',
+                    particle: 'minecraft:wind_explosion_emitter',
+                    at: 'self',
+                },
+            ],
+        },
+    },
+    {
         label: 'Reaper',
         detail: 'Kills heal you and give XP',
         ability: {
@@ -65,6 +119,41 @@ export const TEMPLATES: readonly Template[] = [
         ability: {
             trigger: 'hurt',
             do: [{ action: 'damage', amount: 2 }],
+        },
+    },
+    {
+        label: 'Mana bolt',
+        detail: 'Shoots a wind charge for 10 mana. Pair it with Mana regen',
+        ability: {
+            trigger: 'use',
+            payScore: true,
+            costObjective: 'mana',
+            scoreCost: 10,
+            do: [
+                {
+                    action: 'projectile',
+                    projectile: 'minecraft:wind_charge_projectile',
+                    speed: 2,
+                },
+            ],
+        },
+    },
+    {
+        label: 'Fire charge wand',
+        detail: 'Shoots a flaming arrow, using up a fire charge from your inventory',
+        ability: {
+            trigger: 'use',
+            payItem: true,
+            ammo: 'minecraft:fire_charge',
+            ammoCount: 1,
+            cooldown: 1,
+            do: [
+                {
+                    action: 'projectile',
+                    projectile: 'flaming_arrow',
+                    speed: 3,
+                },
+            ],
         },
     },
     {
@@ -103,6 +192,101 @@ export const TEMPLATES: readonly Template[] = [
                     projectile: 'flaming_arrow',
                     speed: 3,
                 },
+            ],
+        },
+    },
+    {
+        label: 'Healing staff',
+        detail: 'Right-click a pet or a friend to heal them',
+        ability: {
+            trigger: 'interact',
+            cooldown: 2,
+            do: [
+                { action: 'heal', amount: 6, target: 'target' },
+                {
+                    action: 'particle',
+                    particle: 'minecraft:heart_particle',
+                },
+            ],
+        },
+    },
+    {
+        label: 'Golden head',
+        detail: 'Regeneration, absorption and speed, then 20 seconds before the next one',
+        ability: {
+            trigger: 'eat',
+            cooldown: 20,
+            do: [
+                {
+                    action: 'effect',
+                    effect: 'minecraft:regeneration',
+                    level: 2,
+                    duration: 9,
+                },
+                {
+                    action: 'effect',
+                    effect: 'minecraft:absorption',
+                    level: 2,
+                    duration: 120,
+                },
+                {
+                    action: 'effect',
+                    effect: 'minecraft:speed',
+                    level: 1,
+                    duration: 10,
+                },
+            ],
+        },
+    },
+    {
+        label: 'Shield wall',
+        detail: 'Resistance while you sneak with the shield in your off-hand',
+        ability: {
+            trigger: 'worn',
+            sneak: 'only',
+            do: [
+                {
+                    action: 'effect',
+                    effect: 'minecraft:resistance',
+                    level: 2,
+                    duration: 1,
+                    particles: false,
+                },
+            ],
+        },
+    },
+    {
+        label: 'Double jump',
+        detail: 'Press jump in the air for a second jump',
+        ability: {
+            trigger: 'jump',
+            ground: 'air',
+            cooldown: 1,
+            do: [
+                { action: 'launch', strength: 1, target: 'self' },
+                { action: 'safefall', seconds: 4 },
+                { action: 'sound', sound: 'mob.ghast.fireball', volume: 0.4 },
+            ],
+        },
+    },
+    {
+        label: 'Sneak dash',
+        detail: 'Tap sneak to dash forward, every 3 seconds',
+        ability: {
+            trigger: 'sneak',
+            cooldown: 3,
+            do: [{ action: 'knockback', strength: 2.5, target: 'self' }],
+        },
+    },
+    {
+        label: 'Mana regen',
+        detail: 'One mana a second while held, up to 100, with a bar to show it',
+        ability: {
+            trigger: 'held',
+            interval: 1,
+            do: [
+                { action: 'score', objective: 'mana', amount: 1, cap: 100 },
+                { action: 'bar', objective: 'mana', label: 'Mana', max: 100 },
             ],
         },
     },

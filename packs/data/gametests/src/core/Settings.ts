@@ -29,6 +29,9 @@ export interface AddonSettings {
     readonly wandNeedsSneak: boolean;
     readonly stackableAbilities: boolean;
     readonly typedNumbers: boolean;
+    readonly commandSteps: boolean;
+    readonly statLore: boolean;
+    readonly explainSkips: boolean;
 }
 
 export const DEFAULT_SETTINGS: AddonSettings = {
@@ -42,6 +45,9 @@ export const DEFAULT_SETTINGS: AddonSettings = {
     wandNeedsSneak: false,
     stackableAbilities: false,
     typedNumbers: false,
+    commandSteps: true,
+    statLore: true,
+    explainSkips: false,
 };
 
 export class Settings {
@@ -90,6 +96,9 @@ export class Settings {
             wandNeedsSneak: flag('wandNeedsSneak'),
             stackableAbilities: flag('stackableAbilities'),
             typedNumbers: flag('typedNumbers'),
+            commandSteps: flag('commandSteps'),
+            statLore: flag('statLore'),
+            explainSkips: flag('explainSkips'),
         };
     }
 

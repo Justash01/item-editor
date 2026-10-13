@@ -13,14 +13,18 @@ import { KeepOnDeathProperty } from './properties/KeepOnDeathProperty';
 import { LockModeProperty } from './properties/LockModeProperty';
 import { LoreProperty } from './properties/LoreProperty';
 import { NameProperty } from './properties/NameProperty';
+import { RepairProperty } from './properties/RepairProperty';
 import { UnbreakableProperty } from './properties/UnbreakableProperty';
+import { STAT_PROPERTIES } from '../stats/ItemStats';
 
 const PROPERTIES: readonly ItemProperty[] = [
     new NameProperty(),
     new AmountProperty(),
     new LoreProperty(),
     new DamageProperty(),
+    new RepairProperty(),
     new UnbreakableProperty(),
+    ...STAT_PROPERTIES,
     new EnchantmentsProperty(),
     new KeepOnDeathProperty(),
     new LockModeProperty(),

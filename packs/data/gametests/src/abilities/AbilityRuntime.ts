@@ -1,4 +1,5 @@
 import {
+    ButtonState,
     Direction,
     Entity,
     EntityComponentTypes,
@@ -6,6 +7,7 @@ import {
     EntityDieAfterEvent,
     EntityHurtAfterEvent,
     EquipmentSlot,
+    InputButton,
     ItemComponentTypes,
     ItemStack,
     Player,
@@ -16,11 +18,26 @@ import {
     world,
 } from '@minecraft/server';
 import { Settings } from '../core/Settings';
+import { hasRangedStats } from '../stats/ItemStats';
 import { Log } from '../util/Log';
 import { describeError } from '../util/Result';
-import { Ability, Step, describeStep, readAbilities } from './Ability';
+import {
+    Ability,
+    Step,
+    describeStep,
+    readAbilities,
+    triggerLabel,
+} from './Ability';
 import { actionFor, ownShots } from './actions';
-import { equipment, isCreative, useOne, wearItem } from './costs';
+import {
+    ammoShortfall,
+    equipment,
+    isCreative,
+    payAmmo,
+    useOne,
+    wearItem,
+} from './costs';
+import { fallDistance, installFalling, onGround } from './falling';
 import { flagOf, numberOf, textOf } from './fields';
 import {
     blockFilter,
@@ -28,6 +45,7 @@ import {
     noteItemSpawn,
     settleDrops,
 } from './mining';
+import { readScore, scoreUnmet, writeScore } from './scores';
 import { storedAbilities } from './storage';
 import { AbilityContext, Trigger } from './types';
 
@@ -51,6 +69,25 @@ const failed = new Set<string>();
 const shots = new Map<string, { holder: Player; item: ItemStack }>();
 const readied = new Map<string, { item: ItemStack; tick: number }>();
 const lastUse = new Map<string, number>();
+const lastFired = new Map<string, number>();
+const counts = new Map<string, number>();
+const using = new Map<string, ItemStack>();
+
+// Ticks into the day, matching what /time set uses for each name.
+const TIMES: Record<string, readonly [number, number]> = {
+    sunrise: [23000, 24000],
+    day: [0, 12000],
+    noon: [5000, 7000],
+    sunset: [12000, 13000],
+    night: [13000, 23000],
+    midnight: [17000, 19000],
+};
+
+const DIMENSIONS: Record<string, string> = {
+    overworld: 'minecraft:overworld',
+    nether: 'minecraft:nether',
+    the_end: 'minecraft:the_end',
+};
 
 const FACES: Record<Direction, Vector3> = {
     [Direction.Up]: { x: 0, y: 1, z: 0 },
@@ -65,6 +102,7 @@ export class AbilityRuntime {
     private constructor() {}
 
     static install(): void {
+        installFalling();
         world.afterEvents.entityHurt.subscribe(onHurt);
         world.afterEvents.entityDie.subscribe(onDie);
         world.afterEvents.playerBreakBlock.subscribe(onMine);
@@ -88,8 +126,92 @@ export class AbilityRuntime {
             markUse(player)
         );
 
-        world.afterEvents.itemStartUse.subscribe(({ source, itemStack }) =>
-            ready(source, itemStack)
+        world.afterEvents.itemStartUse.subscribe(({ source, itemStack }) => {
+            ready(source, itemStack);
+            if (hasTrigger(itemStack, 'using')) {
+                using.set(source.id, itemStack);
+            }
+        });
+        world.afterEvents.itemStopUse.subscribe(({ source }) =>
+            using.delete(source.id)
+        );
+        world.afterEvents.itemReleaseUse.subscribe(({ source }) =>
+            using.delete(source.id)
+        );
+
+        world.afterEvents.itemCompleteUse.subscribe(({ source, itemStack }) => {
+            using.delete(source.id);
+            if (hasTrigger(itemStack, 'eat')) {
+                fire(itemStack, {
+                    trigger: 'eat',
+                    holder: source,
+                    slot: EquipmentSlot.Mainhand,
+                    location: source.location,
+                    dimension: source.dimension,
+                });
+            }
+        });
+
+        // Eating can only be stopped before it starts, so an eat ability that
+        // is still cooling down blocks the next bite.
+        world.beforeEvents.itemUse.subscribe((event) => {
+            const wait = eatCooldown(event.source, event.itemStack);
+            if (wait > 0) {
+                event.cancel = true;
+                const player = event.source;
+                system.run(() => {
+                    if (player.isValid) {
+                        player.onScreenDisplay.setActionBar(
+                            `Ready in ${Math.ceil(wait / 2) / 10}s`
+                        );
+                    }
+                });
+            }
+        });
+
+        // The after event only fires for villagers and armor stands.
+        world.beforeEvents.playerInteractWithEntity.subscribe(
+            ({ player, target, itemStack }) => {
+                if (!itemStack || !hasTrigger(itemStack, 'interact')) {
+                    return;
+                }
+                system.run(() => {
+                    if (!player.isValid || !target.isValid) {
+                        return;
+                    }
+                    fire(itemStack, {
+                        trigger: 'interact',
+                        holder: player,
+                        slot: EquipmentSlot.Mainhand,
+                        target,
+                        targetType: target.typeId,
+                        location: target.location,
+                        dimension: player.dimension,
+                    });
+                });
+            }
+        );
+
+        world.afterEvents.playerButtonInput.subscribe(
+            ({ player, button }) => {
+                const trigger = button === InputButton.Jump ? 'jump' : 'sneak';
+                for (const slot of [EquipmentSlot.Mainhand, ...WORN_SLOTS]) {
+                    const item = equipment(player, slot);
+                    if (item) {
+                        fire(item, {
+                            trigger,
+                            holder: player,
+                            slot,
+                            location: player.location,
+                            dimension: player.dimension,
+                        });
+                    }
+                }
+            },
+            {
+                buttons: [InputButton.Jump, InputButton.Sneak],
+                state: ButtonState.Pressed,
+            }
         );
 
         world.afterEvents.itemUse.subscribe(({ source, itemStack }) => {
@@ -149,13 +271,16 @@ export class AbilityRuntime {
         world.afterEvents.playerInventoryItemChange.subscribe(watchForBreak);
 
         world.afterEvents.playerLeave.subscribe(({ playerId }) => {
-            for (const key of cooldowns.keys()) {
-                if (key.startsWith(`${playerId}:`)) {
-                    cooldowns.delete(key);
+            for (const map of [cooldowns, lastFired, counts]) {
+                for (const key of map.keys()) {
+                    if (key.startsWith(`${playerId}:`)) {
+                        map.delete(key);
+                    }
                 }
             }
             readied.delete(playerId);
             lastUse.delete(playerId);
+            using.delete(playerId);
         });
 
         system.runInterval(checkEquipment, EQUIPMENT_INTERVAL);
@@ -217,6 +342,7 @@ function onHurt({
                 location: hurtEntity.location,
                 dimension: hurtEntity.dimension,
                 damage,
+                fall: fallDistance(damagingEntity),
             });
         }
     }
@@ -308,8 +434,7 @@ function onSpawn(entity: Entity): void {
         return;
     }
     const held = equipment(owner, EquipmentSlot.Mainhand);
-    const item =
-        held && hasTrigger(held, 'shoot') ? held : takeReadied(owner.id);
+    const item = held && tracksShots(held) ? held : takeReadied(owner.id);
     if (item) {
         // Arrows left in chunks that unload never send entityRemove.
         if (shots.size >= MAX_SHOTS) {
@@ -325,9 +450,19 @@ function onSpawn(entity: Entity): void {
 // A thrown trident (or the last snowball) has already left the hand by the
 // time it spawns, so fall back to whatever was being charged or thrown.
 function ready(player: Player, item: ItemStack): void {
-    if (hasTrigger(item, 'shoot')) {
+    if (tracksShots(item)) {
         readied.set(player.id, { item, tick: system.currentTick });
     }
+}
+
+// Shots are also remembered for a bow with an attack stat, so its arrows hit
+// harder too.
+function tracksShots(item: ItemStack): boolean {
+    return hasTrigger(item, 'shoot') || hasRangedStats(item);
+}
+
+export function shotItem(projectileId: string): ItemStack | undefined {
+    return shots.get(projectileId)?.item;
 }
 
 function takeReadied(playerId: string): ItemStack | undefined {
@@ -370,6 +505,14 @@ function checkEquipment(): void {
             if (worn) {
                 fire(worn, { ...base, trigger: 'worn', slot });
             }
+        }
+        const inUse = using.get(player.id);
+        if (inUse) {
+            fire(inUse, {
+                ...base,
+                trigger: 'using',
+                slot: EquipmentSlot.Mainhand,
+            });
         }
     }
 }
@@ -446,37 +589,49 @@ function fire(item: ItemStack, base: Base): void {
                 accepts: blockFilter(ability.settings),
             },
         };
-        if (!conditionsMet(ability, ctx)) {
+        const why = unmet(ability, ctx);
+        if (why) {
+            explain(ability, ctx, why);
             continue;
         }
 
         const key = `${ctx.holder.id}:${ability.id}`;
         const ready = cooldowns.get(key) ?? 0;
         if (now < ready) {
-            tell(
-                ability,
-                ctx,
-                `Ready in ${Math.ceil((ready - now) / 2) / 10}s`
-            );
+            const wait = `Ready in ${Math.ceil((ready - now) / 2) / 10}s`;
+            tell(ability, ctx, wait);
+            explain(ability, ctx, `on cooldown, ${wait.toLowerCase()}`);
             continue;
+        }
+
+        const interval = numberOf(ability.settings, 'interval');
+        if (interval > 0.5) {
+            if (now - (lastFired.get(key) ?? -Infinity) < interval * 20) {
+                continue;
+            }
+            lastFired.set(key, now);
+        }
+
+        const every = numberOf(ability.settings, 'every');
+        if (every > 1) {
+            const count = (counts.get(key) ?? 0) + 1;
+            counts.set(key, count % every);
+            if (count < every) {
+                explain(ability, ctx, `${count} of every ${every}`);
+                continue;
+            }
         }
 
         const chance = numberOf(ability.settings, 'chance');
         if (chance < 100 && Math.random() * 100 >= chance) {
+            explain(ability, ctx, `missed its ${chance}% chance`);
             continue;
         }
 
-        const levels = numberOf(ability.settings, 'levels');
-        if (
-            levels > 0 &&
-            !isCreative(ctx.holder) &&
-            ctx.holder.level < levels
-        ) {
-            tell(
-                ability,
-                ctx,
-                `Needs ${levels} level${levels === 1 ? '' : 's'}`
-            );
+        const short = shortfall(ability, ctx);
+        if (short) {
+            tell(ability, ctx, short);
+            explain(ability, ctx, short.toLowerCase());
             continue;
         }
 
@@ -489,14 +644,75 @@ function fire(item: ItemStack, base: Base): void {
     }
 }
 
-function conditionsMet(ability: Ability, ctx: AbilityContext): boolean {
+// Gives back why the ability can't fire, or undefined when it can. Only
+// shown to players with "Explain skipped abilities" on.
+function unmet(ability: Ability, ctx: AbilityContext): string | undefined {
     const settings = ability.settings;
+    const holder = ctx.holder;
     const sneak = textOf(settings, 'sneak');
+    if (sneak === 'only' && !holder.isSneaking) {
+        return 'not sneaking';
+    }
+    if (sneak === 'never' && holder.isSneaking) {
+        return 'sneaking';
+    }
+
+    const ground = textOf(settings, 'ground');
+    if (ground === 'ground' || ground === 'air') {
+        if ((ground === 'ground') !== onGround(holder)) {
+            return ground === 'ground' ? 'in the air' : 'on the ground';
+        }
+    }
+    const water = textOf(settings, 'water');
+    if (water === 'only' && !holder.isInWater) {
+        return 'not in water';
+    }
+    if (water === 'never' && holder.isInWater) {
+        return 'in water';
+    }
+    const timeId = textOf(settings, 'time');
+    const time = TIMES[timeId];
+    if (time) {
+        const tick = world.getTimeOfDay();
+        if (tick < time[0] || tick >= time[1]) {
+            return `wrong time of day, needs ${timeId}`;
+        }
+    }
+    const dimensionId = textOf(settings, 'dimension');
+    const dimension = DIMENSIONS[dimensionId];
+    if (dimension && holder.dimension.id !== dimension) {
+        return `not in the ${dimensionId.replace('the_', '')}`;
+    }
+
+    const fall = numberOf(settings, 'fall');
+    if ((ctx.fall ?? 0) < fall) {
+        return `fell ${Math.round((ctx.fall ?? 0) * 10) / 10} of ${fall} blocks`;
+    }
+    const health = numberOf(settings, 'health');
+    if (!healthUnder(holder, health)) {
+        return `health over ${health}%`;
+    }
+    const targetHealth = numberOf(settings, 'targetHealth');
     if (
-        (sneak === 'only' && !ctx.holder.isSneaking) ||
-        (sneak === 'never' && ctx.holder.isSneaking)
+        targetHealth > 0 &&
+        targetHealth < 100 &&
+        ctx.trigger !== 'kill' &&
+        (!ctx.target?.isValid || !healthUnder(ctx.target, targetHealth))
     ) {
-        return false;
+        return `target health over ${targetHealth}%`;
+    }
+
+    const tagCheck = textOf(settings, 'tagCheck');
+    const tag = textOf(settings, 'tag');
+    if (tagCheck === 'has' && !holder.hasTag(tag)) {
+        return `no ${tag} tag`;
+    }
+    if (tagCheck === 'lacks' && holder.hasTag(tag)) {
+        return `has the ${tag} tag`;
+    }
+    const score = scoreUnmet(settings, ctx);
+    if (score) {
+        return score;
     }
 
     const victims = textOf(settings, 'victims');
@@ -508,24 +724,93 @@ function conditionsMet(ability: Ability, ctx: AbilityContext): boolean {
             (victims === 'mobs' && type === 'minecraft:player') ||
             (victims === 'type' && type !== textOf(settings, 'victimType'))
         ) {
-            return false;
+            return 'wrong kind of target';
         }
     }
 
-    return !ctx.mined || ctx.mined.accepts(ctx.mined.permutation);
+    if (ctx.mined && !ctx.mined.accepts(ctx.mined.permutation)) {
+        return 'not one of its blocks';
+    }
+    return undefined;
+}
+
+function explain(ability: Ability, ctx: AbilityContext, why: string): void {
+    if (Settings.get().explainSkips) {
+        ctx.holder.onScreenDisplay.setActionBar(
+            `§7${triggerLabel(ability.trigger)} skipped: ${why}`
+        );
+    }
+}
+
+function healthUnder(entity: Entity, percent: number): boolean {
+    if (percent <= 0 || percent >= 100) {
+        return true;
+    }
+    const health = entity.getComponent(EntityComponentTypes.Health);
+    return (
+        health !== undefined &&
+        (health.currentValue / health.effectiveMax) * 100 <= percent
+    );
+}
+
+function shortfall(ability: Ability, ctx: AbilityContext): string | undefined {
+    const settings = ability.settings;
+    if (isCreative(ctx.holder)) {
+        return undefined;
+    }
+    const levels = numberOf(settings, 'levels');
+    if (levels > 0 && ctx.holder.level < levels) {
+        return `Needs ${levels} level${levels === 1 ? '' : 's'}`;
+    }
+    if (flagOf(settings, 'payScore')) {
+        const cost = numberOf(settings, 'scoreCost');
+        const name = textOf(settings, 'costObjective');
+        if ((readScore(ctx.holder, name) ?? 0) < cost) {
+            return `Needs ${cost} ${name}`;
+        }
+    }
+    if (flagOf(settings, 'payItem')) {
+        return ammoShortfall(
+            ctx.holder,
+            textOf(settings, 'ammo'),
+            numberOf(settings, 'ammoCount')
+        );
+    }
+    return undefined;
 }
 
 function tell(ability: Ability, ctx: AbilityContext, message: string): void {
-    if (ability.trigger === 'use' && flagOf(ability.settings, 'notice')) {
+    if (
+        (ability.trigger === 'use' ||
+            ability.trigger === 'eat' ||
+            ability.trigger === 'interact') &&
+        flagOf(ability.settings, 'notice')
+    ) {
         ctx.holder.onScreenDisplay.setActionBar(message);
     }
 }
 
 function pay(ability: Ability, ctx: AbilityContext): void {
     const settings = ability.settings;
+    const creative = isCreative(ctx.holder);
     const levels = numberOf(settings, 'levels');
-    if (levels > 0 && !isCreative(ctx.holder)) {
+    if (levels > 0 && !creative) {
         ctx.holder.addLevels(-levels);
+    }
+    if (flagOf(settings, 'payScore') && !creative) {
+        const name = textOf(settings, 'costObjective');
+        writeScore(
+            ctx.holder,
+            name,
+            (readScore(ctx.holder, name) ?? 0) - numberOf(settings, 'scoreCost')
+        );
+    }
+    if (flagOf(settings, 'payItem') && !creative) {
+        payAmmo(
+            ctx.holder,
+            textOf(settings, 'ammo'),
+            numberOf(settings, 'ammoCount')
+        );
     }
     wearItem(ctx, numberOf(settings, 'durability'));
     if (flagOf(settings, 'consume')) {
@@ -533,8 +818,28 @@ function pay(ability: Ability, ctx: AbilityContext): void {
     }
 }
 
+// How long until the item can be eaten again, 0 if it can be now.
+function eatCooldown(player: Player, item: ItemStack): number {
+    if (!hasTrigger(item, 'eat')) {
+        return 0;
+    }
+    const now = system.currentTick;
+    let wait = 0;
+    for (const ability of readAbilities(item)) {
+        if (ability.enabled && ability.trigger === 'eat') {
+            const ready = cooldowns.get(`${player.id}:${ability.id}`) ?? 0;
+            wait = Math.max(wait, ready - now);
+        }
+    }
+    return wait;
+}
+
 function execute(ability: Ability, ctx: AbilityContext): void {
-    for (const step of ability.steps) {
+    const steps =
+        textOf(ability.settings, 'pick') === 'one' && ability.steps.length > 1
+            ? [ability.steps[Math.floor(Math.random() * ability.steps.length)]!]
+            : ability.steps;
+    for (const step of steps) {
         if (step.delay > 0) {
             system.runTimeout(
                 () => {

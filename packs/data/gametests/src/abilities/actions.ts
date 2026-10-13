@@ -6,7 +6,11 @@ import {
     Vector3,
 } from '@minecraft/server';
 import { MinecraftEffectTypes } from '@minecraft/vanilla-data';
+import { Settings } from '../core/Settings';
+import { Log } from '../util/Log';
 import { idToName, levelText } from '../util/text';
+import { cushionFall } from './falling';
+import { readScore, writeScore } from './scores';
 import {
     appliesTo,
     choiceField,
@@ -67,6 +71,9 @@ const SOUNDS: readonly ChoiceOption[] = [
     { value: 'random.totem', label: 'Totem' },
     { value: 'beacon.activate', label: 'Beacon' },
     { value: 'fire.ignite', label: 'Flint and steel' },
+    { value: 'mace.smash_ground', label: 'Mace smash' },
+    { value: 'mace.heavy_smash_ground', label: 'Mace heavy smash' },
+    { value: 'wind_charge.burst', label: 'Wind burst' },
 ];
 
 const PARTICLES: readonly ChoiceOption[] = [
@@ -84,6 +91,7 @@ const PARTICLES: readonly ChoiceOption[] = [
     { value: 'minecraft:huge_explosion_emitter', label: 'Big explosion' },
     { value: 'minecraft:sonic_explosion', label: 'Sonic boom' },
     { value: 'minecraft:knockback_roar_particle', label: 'Roar' },
+    { value: 'minecraft:wind_explosion_emitter', label: 'Wind burst' },
 ];
 
 const PROJECTILES: readonly ChoiceOption[] = [
@@ -96,6 +104,14 @@ const PROJECTILES: readonly ChoiceOption[] = [
     { value: 'custom', label: 'Something else' },
 ];
 
+const log = Log.get('Abilities');
+let warnedCommands = false;
+
+const MOB_FILTER = {
+    excludeTypes: ['minecraft:player', 'minecraft:item', 'minecraft:xp_orb'],
+    excludeFamilies: ['inanimate'],
+};
+
 // Projectiles spawned by an ability, so the arrow-hit tracking leaves them be.
 // Otherwise an arrow-hit ability that shoots would keep feeding itself.
 export const ownShots = new Set<string>();
@@ -106,20 +122,13 @@ function subjects(ctx: AbilityContext, values: Values): Entity[] {
         case 'target':
             return ctx.target?.isValid ? [ctx.target] : [];
         case 'mobs':
-            return ctx.dimension
-                .getEntities({
-                    location: ctx.holder.location,
-                    maxDistance: radius,
-                    excludeTypes: [
-                        'minecraft:player',
-                        'minecraft:item',
-                        'minecraft:xp_orb',
-                    ],
-                    excludeFamilies: ['inanimate'],
-                })
-                .filter((entity) =>
-                    entity.hasComponent(EntityComponentTypes.Health)
-                );
+            return mobsAround(ctx, ctx.holder.location, radius);
+        case 'around':
+            return mobsAround(
+                ctx,
+                ctx.target?.isValid ? ctx.target.location : ctx.location,
+                radius
+            );
         case 'players':
             return ctx.dimension
                 .getPlayers({
@@ -132,6 +141,16 @@ function subjects(ctx: AbilityContext, values: Values): Entity[] {
     }
 }
 
+function mobsAround(
+    ctx: AbilityContext,
+    center: Vector3,
+    radius: number
+): Entity[] {
+    return ctx.dimension
+        .getEntities({ ...MOB_FILTER, location: center, maxDistance: radius })
+        .filter((entity) => entity.hasComponent(EntityComponentTypes.Health));
+}
+
 function whom(values: Values): string {
     const radius = numberOf(values, 'radius');
     switch (textOf(values, 'target')) {
@@ -139,6 +158,8 @@ function whom(values: Values): string {
             return 'the target';
         case 'mobs':
             return `mobs within ${radius} blocks`;
+        case 'around':
+            return `mobs within ${radius} blocks of the target`;
         case 'players':
             return `players within ${radius} blocks`;
         default:
@@ -174,6 +195,28 @@ function plainName(entity: Entity): string {
         return entity.name;
     }
     return entity.nameTag || idToName(entity.typeId);
+}
+
+const BAR_LENGTH = 20;
+
+function hurt(ctx: AbilityContext, entity: Entity, amount: number): void {
+    // Magic rather than entityAttack, or it would count as another hit and
+    // set the on-hit abilities off again.
+    entity.applyDamage(
+        amount,
+        entity.id === ctx.holder.id
+            ? { cause: EntityDamageCause.magic }
+            : { cause: EntityDamageCause.magic, damagingEntity: ctx.holder }
+    );
+}
+
+// Picked the way the mace picks: a mob in the air gets the air sound, one on
+// the ground gets the heavy one after a long fall.
+function maceSound(target: Entity, fall: number): string {
+    if (!target.isOnGround) {
+        return 'mace.smash_air';
+    }
+    return fall > 5 ? 'mace.heavy_smash_ground' : 'mace.smash_ground';
 }
 
 function heal(entity: Entity, amount: number): void {
@@ -215,19 +258,62 @@ const GENERAL: readonly ActionDefinition[] = [
         describe: (values) =>
             `Deal ${numberOf(values, 'amount')} damage to ${whom(values)}`,
         run: (ctx, values) => {
-            // Magic rather than entityAttack, or it would count as another hit
-            // and set the on-hit abilities off again.
             for (const entity of subjects(ctx, values)) {
-                entity.applyDamage(
-                    numberOf(values, 'amount'),
-                    entity.id === ctx.holder.id
-                        ? { cause: EntityDamageCause.magic }
-                        : {
-                              cause: EntityDamageCause.magic,
-                              damagingEntity: ctx.holder,
-                          }
+                hurt(ctx, entity, numberOf(values, 'amount'));
+            }
+        },
+    },
+    {
+        type: 'smash',
+        label: 'Smash damage',
+        detail: 'Extra damage for every block you fell before the hit, like a mace',
+        group: 'Combat and movement',
+        triggers: ['hit'],
+        fields: [
+            numberField('perBlock', 'Damage per block fallen', 0.5, 10, 0.5, 2),
+            numberField('max', 'At most, in half hearts', 1, 100, 1, 40, {
+                ceiling: 1000,
+            }),
+            flagField('sound', 'Mace sound', true),
+            ...appliesTo('target'),
+        ],
+        describe: (values) =>
+            `${numberOf(values, 'perBlock')} damage per block fallen to ${whom(values)}`,
+        run: (ctx, values) => {
+            const fall = ctx.fall ?? 0;
+            const amount = Math.min(
+                fall * numberOf(values, 'perBlock'),
+                numberOf(values, 'max')
+            );
+            if (amount < 0.5) {
+                return;
+            }
+            for (const entity of subjects(ctx, values)) {
+                hurt(ctx, entity, amount);
+            }
+            if (flagOf(values, 'sound') && ctx.target?.isValid) {
+                ctx.dimension.playSound(
+                    maceSound(ctx.target, fall),
+                    ctx.location
                 );
             }
+        },
+    },
+    {
+        type: 'safefall',
+        label: 'No fall damage',
+        detail: 'Your next landing does no damage, however far you fall',
+        group: 'Combat and movement',
+        fields: [
+            numberField('seconds', 'Lasts, in seconds', 1, 30, 1, 3, {
+                description:
+                    'Wears off unused after this long, so a later fall still hurts.',
+            }),
+        ],
+        describe: (values) =>
+            `No fall damage for ${numberOf(values, 'seconds')}s`,
+        run: (ctx, values) => {
+            cushionFall(ctx.holder, numberOf(values, 'seconds'));
         },
     },
     {
@@ -557,6 +643,173 @@ const GENERAL: readonly ActionDefinition[] = [
         },
     },
     {
+        type: 'tag',
+        label: 'Tag',
+        detail: 'Add or remove a tag, for commands and other abilities to check',
+        group: 'Tags and scores',
+        fields: [
+            choiceField(
+                'mode',
+                'Do',
+                [
+                    { value: 'add', label: 'Add the tag' },
+                    { value: 'remove', label: 'Remove the tag' },
+                ],
+                'add'
+            ),
+            {
+                kind: 'text',
+                key: 'tag',
+                label: 'Tag name',
+                default: 'marked',
+                example: 'red_team',
+                maxLength: 64,
+            },
+            ...appliesTo('self'),
+        ],
+        describe: (values) =>
+            textOf(values, 'mode') === 'remove'
+                ? `Remove tag ${textOf(values, 'tag')} from ${whom(values)}`
+                : `Tag ${whom(values)} ${textOf(values, 'tag')}`,
+        run: (ctx, values) => {
+            const tag = textOf(values, 'tag');
+            for (const entity of subjects(ctx, values)) {
+                if (textOf(values, 'mode') === 'remove') {
+                    entity.removeTag(tag);
+                } else {
+                    entity.addTag(tag);
+                }
+            }
+        },
+    },
+    {
+        type: 'bar',
+        label: 'Score bar',
+        detail: 'Show one of your scores as a bar in the action bar, like a mana meter',
+        group: 'Tags and scores',
+        fields: [
+            {
+                kind: 'text',
+                key: 'objective',
+                label: 'Scoreboard objective',
+                default: 'mana',
+                example: 'energy',
+                maxLength: 32,
+            },
+            {
+                kind: 'text',
+                key: 'label',
+                label: 'Name shown before it',
+                default: 'Mana',
+                example: 'Energy',
+                maxLength: 32,
+            },
+            numberField('max', 'Full at', 1, 1000, 10, 100, {
+                ceiling: 1_000_000,
+            }),
+            choiceField(
+                'color',
+                'Color',
+                [
+                    { value: 'b', label: 'Aqua' },
+                    { value: '9', label: 'Blue' },
+                    { value: 'a', label: 'Green' },
+                    { value: 'e', label: 'Yellow' },
+                    { value: '6', label: 'Gold' },
+                    { value: 'c', label: 'Red' },
+                    { value: 'd', label: 'Pink' },
+                    { value: '5', label: 'Purple' },
+                ],
+                'b'
+            ),
+        ],
+        describe: (values) => `Show a ${textOf(values, 'objective')} bar`,
+        run: (ctx, values) => {
+            const max = Math.max(numberOf(values, 'max'), 1);
+            const score =
+                readScore(ctx.holder, textOf(values, 'objective')) ?? 0;
+            const filled = Math.round(
+                (Math.min(Math.max(score, 0), max) / max) * BAR_LENGTH
+            );
+            ctx.holder.onScreenDisplay.setActionBar(
+                `${textOf(values, 'label')} §${textOf(values, 'color')}${'|'.repeat(filled)}§8${'|'.repeat(BAR_LENGTH - filled)} §7${score}/${max}`
+            );
+        },
+    },
+    {
+        type: 'score',
+        label: 'Score',
+        detail: 'Add to, take from or set a scoreboard score. The objective is made if missing',
+        group: 'Tags and scores',
+        fields: [
+            {
+                kind: 'text',
+                key: 'objective',
+                label: 'Scoreboard objective',
+                default: 'mana',
+                example: 'kills',
+                maxLength: 32,
+            },
+            choiceField(
+                'mode',
+                'Do',
+                [
+                    { value: 'add', label: 'Add' },
+                    { value: 'remove', label: 'Take away' },
+                    { value: 'set', label: 'Set to' },
+                ],
+                'add'
+            ),
+            numberField('amount', 'Amount', 0, 100, 1, 1, {
+                ceiling: 1_000_000,
+            }),
+            numberField('cap', 'Never above, 0 for no limit', 0, 1000, 10, 0, {
+                ceiling: 1_000_000,
+                showWhen: { key: 'mode', values: ['add'] },
+            }),
+            ...appliesTo('self'),
+        ],
+        describe: (values) => {
+            const amount = numberOf(values, 'amount');
+            const name = textOf(values, 'objective');
+            switch (textOf(values, 'mode')) {
+                case 'remove':
+                    return `Take ${amount} ${name} from ${whom(values)}`;
+                case 'set':
+                    return `Set ${name} to ${amount} on ${whom(values)}`;
+                default:
+                    return `Give ${whom(values)} ${amount} ${name}`;
+            }
+        },
+        run: (ctx, values) => {
+            const name = textOf(values, 'objective');
+            const amount = numberOf(values, 'amount');
+            const cap = numberOf(values, 'cap');
+            for (const entity of subjects(ctx, values)) {
+                const current = readScore(entity, name) ?? 0;
+                switch (textOf(values, 'mode')) {
+                    case 'remove':
+                        writeScore(entity, name, current - amount);
+                        break;
+                    case 'set':
+                        writeScore(entity, name, amount);
+                        break;
+                    default:
+                        writeScore(
+                            entity,
+                            name,
+                            cap > 0
+                                ? Math.max(
+                                      current,
+                                      Math.min(current + amount, cap)
+                                  )
+                                : current + amount
+                        );
+                }
+            }
+        },
+    },
+    {
         type: 'xp',
         label: 'Give XP',
         detail: 'Experience points for you',
@@ -743,6 +996,15 @@ const GENERAL: readonly ActionDefinition[] = [
         describe: (values) =>
             `Run /${textOf(values, 'command')}${textOf(values, 'target') === 'self' ? '' : ` as ${whom(values)}`}`,
         run: (ctx, values) => {
+            if (!Settings.get().commandSteps) {
+                if (!warnedCommands) {
+                    warnedCommands = true;
+                    log.warn(
+                        'Skipping command steps, they are turned off in the settings.'
+                    );
+                }
+                return;
+            }
             const command = fillIn(textOf(values, 'command'), ctx);
             for (const entity of subjects(ctx, values)) {
                 entity.runCommand(command);

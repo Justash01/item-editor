@@ -38,7 +38,7 @@ Each item opens a hub with whatever applies to it.
 
 | Screen | Covers |
 | --- | --- |
-| Properties | Name, stack size, durability, unbreakable, keep on death, lock mode |
+| Properties | Name, stack size, durability, repair, unbreakable, attack, protection, keep on death, lock mode |
 | Lore | One screen per line, added, edited or removed |
 | Enchantments | What's on the item, plus anything it can still take |
 | Book | Pages, title and author, on writable and written books |
@@ -52,6 +52,13 @@ slider stops where that enchantment stops, so you can't build something the
 game will refuse. **Max all enchantments** fills in everything compatible at
 once, keeping what's already on the item wherever two enchantments clash, and
 leaving curses out.
+
+**Repair** in Properties gives durability back on top of what the item has
+left, rather than setting it, and only shows on damaged items. It follows the
+Damage slider above it while the form is open, so damaging a fresh sword
+there brings Repair up straight away, ready to undo it. Attack and
+protection only show on items that don't stack; the
+[properties table](commands.md#properties) says what each one does.
 
 **Show full data** prints the same report as `/jstash:item inspect` to chat,
 which is the only way to see the read-only parts: food values, potion effects,
@@ -94,6 +101,11 @@ onto another one. The data travels, not the item, so a sword's name, lore and
 enchantments land on an axe and it stays an axe. Your clipboard is yours alone
 and survives reloads.
 
+**Copy as command** shows a `/jstash:grant` line that makes the item, ready to
+select and copy. It's for taking an item to another world, or posting one for
+someone else. Long items make long commands, and chat may not take all of it,
+but a command block will.
+
 **Undo last change** walks back the edits on that slot, ten deep to start with,
 covering menu edits and commands alike. The history belongs to the slot rather
 than to what you have selected, so you can wander off and come back to it. It's
@@ -106,9 +118,8 @@ wand. Point it at a block or an entity and the editor opens on it, already
 selected, so the commands line up with whatever you were just looking at. The
 same entry turns it back.
 
-Anything that doesn't stack works, and the marker rides along with the item,
-so handing someone your wand hands them a wand. Stackable items have nowhere to
-keep the marker.
+Anything that doesn't stack works, and handing someone your wand hands them a
+wand.
 
 The catch is that a wand takes over the item's normal use, which is fine on a
 carrot on a stick and less fine on the pickaxe you were mining with. **Wand only while
@@ -129,14 +140,16 @@ Stored on the world, so they apply to everyone on it.
 | Sounds | On | A sound when something works, another when it fails. |
 | Localized names | On | Item and block names in your language. Off shows ids like `minecraft:diamond_sword`. |
 | Roman enchantment levels | On | `Sharpness V` instead of `Sharpness 5`. |
+| Apply stats information automatically | On | A line like "+50% Damage Dealt" at the top of the lore on items with attack or protection set. |
 | Confirm destructive actions | On | Ask before resets, deletes and enchantment strips. |
 | Reach | 12 | How far **Entity in view** and **Block in view** reach, 4 to 64 blocks. |
 | Undo steps | 10 | How many changes each slot remembers, 1 to 25. |
 | Wand only while sneaking | Off | The wand waits until you sneak. |
 | On stackable items | Off | Lets items that stack have [abilities](abilities.md#stackable-items), saved on the world. |
 | Type any number | Off | Text boxes instead of sliders for ability numbers, so they can go past the usual range. |
+| Allow command steps | On | Off skips every **Run a command** step in every ability. |
+| Explain skipped abilities | Off | The action bar says why an ability didn't go off. For setting things up. |
 
 Lowering **Undo steps** doesn't wipe history straight away; the oldest steps
 drop off the next time that slot is edited. Enchantment and potion effect
-names stay in English whatever **Localized names** says, since the game doesn't
-expose translations for them.
+names stay in English whatever **Localized names** says.

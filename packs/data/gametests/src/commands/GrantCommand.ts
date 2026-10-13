@@ -57,6 +57,7 @@ export class GrantCommand extends EditorCommand {
                 const source = InventorySource.of(target);
                 return source.ok
                     ? ItemEditorService.give(
+                          target,
                           source.value,
                           itemType,
                           amount,

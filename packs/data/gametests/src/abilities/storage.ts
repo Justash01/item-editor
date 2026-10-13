@@ -52,6 +52,12 @@ export function visibleLore(item: ItemStack): string[] {
     return item.getLore().filter((line) => !MARKER.test(line));
 }
 
+export function loreRoom(item: ItemStack): number {
+    return item.getLore().some((line) => MARKER.test(line))
+        ? MAX_LORE - 1
+        : MAX_LORE;
+}
+
 export function setVisibleLore(item: ItemStack, lines: string[]): void {
     const marker = item.getLore().find((line) => MARKER.test(line));
     if (marker && lines.length >= MAX_LORE) {

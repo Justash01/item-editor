@@ -1,4 +1,4 @@
-import { BlockTypes, EntityTypes } from '@minecraft/server';
+import { BlockTypes, EntityTypes, ItemTypes } from '@minecraft/server';
 import { Result, fail, ok } from '../util/Result';
 import { JsonObject, JsonValue } from '../util/json';
 import { splitList } from '../util/text';
@@ -50,6 +50,9 @@ export function targetOptions(trigger: Trigger): ChoiceOption[] {
         { value: 'mobs', label: 'Mobs near you' },
         { value: 'players', label: 'Players near you' }
     );
+    if (hasTarget(trigger)) {
+        options.push({ value: 'around', label: 'Mobs around the target' });
+    }
     return options;
 }
 
@@ -162,7 +165,7 @@ function readField(
             }
             return fail(
                 field.options.length > 8
-                    ? `"${String(value)}" isn't a ${field.label.toLowerCase()} this can use.`
+                    ? `"${String(value)}" isn't ${withArticle(field.label.toLowerCase())} this can use.`
                     : `${field.label} has to be one of ${field.options.map((option) => option.value).join(', ')}.`
             );
         }
@@ -178,13 +181,24 @@ function readField(
     }
 }
 
+function withArticle(noun: string): string {
+    return /^[aeiou]/.test(noun) ? `an ${noun}` : `a ${noun}`;
+}
+
 function normalizeId(id: string): string {
     const clean = id.trim().toLowerCase();
     return clean.includes(':') ? clean : `minecraft:${clean}`;
 }
 
+const CHECK_NOUN = {
+    block: 'block',
+    blocks: 'block',
+    entity: 'mob',
+    item: 'item',
+} as const;
+
 function checkIds(
-    check: 'block' | 'blocks' | 'entity',
+    check: 'block' | 'blocks' | 'entity' | 'item',
     text: string
 ): Result<string> {
     const ids = check === 'blocks' ? splitList(text) : [text];
@@ -192,11 +206,13 @@ function checkIds(
     for (const raw of ids) {
         const id = normalizeId(raw);
         const known =
-            check === 'entity' ? EntityTypes.get(id) : BlockTypes.get(id);
+            check === 'entity'
+                ? EntityTypes.get(id)
+                : check === 'item'
+                  ? ItemTypes.get(id)
+                  : BlockTypes.get(id);
         if (!known) {
-            return fail(
-                `there's no ${check === 'entity' ? 'mob' : 'block'} called ${id}.`
-            );
+            return fail(`there's no ${CHECK_NOUN[check]} called ${id}.`);
         }
         clean.push(id);
     }
@@ -262,7 +278,7 @@ export function appliesTo(
         { kind: 'target', key: 'target', label, prefer },
         numberField('radius', 'Radius, in blocks', 1, 16, 1, 5, {
             ceiling: 64,
-            showWhen: { key: 'target', values: ['mobs', 'players'] },
+            showWhen: { key: 'target', values: ['mobs', 'players', 'around'] },
         }),
     ];
 }

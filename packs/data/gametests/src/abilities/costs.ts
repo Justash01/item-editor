@@ -6,6 +6,7 @@ import {
     ItemStack,
     Player,
 } from '@minecraft/server';
+import { idToName } from '../util/text';
 import { storedAbilities } from './storage';
 import { AbilityContext } from './types';
 
@@ -57,6 +58,57 @@ export function wearItem(ctx: AbilityContext, amount: number): void {
     }
     durability.damage += amount;
     equippable?.setEquipment(ctx.slot, item);
+}
+
+function inventoryOf(player: Player) {
+    return player.getComponent(EntityComponentTypes.Inventory)?.container;
+}
+
+function normalized(id: string): string {
+    return id.includes(':') ? id : `minecraft:${id}`;
+}
+
+export function ammoShortfall(
+    player: Player,
+    id: string,
+    count: number
+): string | undefined {
+    const container = inventoryOf(player);
+    const type = normalized(id);
+    let found = 0;
+    if (container) {
+        for (let slot = 0; slot < container.size && found < count; slot++) {
+            const item = container.getItem(slot);
+            if (item?.typeId === type) {
+                found += item.amount;
+            }
+        }
+    }
+    return found >= count ? undefined : `Needs ${count} ${idToName(type)}`;
+}
+
+// Takes from the last slots first, so the hotbar is the last to run dry.
+export function payAmmo(player: Player, id: string, count: number): void {
+    const container = inventoryOf(player);
+    const type = normalized(id);
+    if (!container) {
+        return;
+    }
+    let left = count;
+    for (let slot = container.size - 1; slot >= 0 && left > 0; slot--) {
+        const item = container.getItem(slot);
+        if (item?.typeId !== type) {
+            continue;
+        }
+        if (item.amount > left) {
+            item.amount -= left;
+            container.setItem(slot, item);
+            left = 0;
+        } else {
+            left -= item.amount;
+            container.setItem(slot, undefined);
+        }
+    }
 }
 
 export function useOne(ctx: AbilityContext): void {

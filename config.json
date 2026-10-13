@@ -23,37 +23,19 @@
                 },
                 "filters": [
                     {
-                        "profile": "scripts-dev"
+                        "profile": "scripts-release"
                     }
                 ]
             },
-            "scripts-dev": {
+            "debug": {
                 "export": {
                     "readOnly": false,
-                    "target": "none"
+                    "target": "development",
+                    "build": "standard"
                 },
                 "filters": [
                     {
-                        "filter": "gametests",
-                        "settings": {
-                            "buildOptions": {
-                                "bundle": true,
-                                "entryPoints": [
-                                    "data/gametests/src/main.ts"
-                                ],
-                                "format": "esm",
-                                "minify": false,
-                                "target": "es2020"
-                            },
-                            "debugBuild": true,
-                            "injectSourceMapping": true,
-                            "modules": [
-                                "@minecraft/server@2.9.0",
-                                "@minecraft/server-ui@2.1.0"
-                            ],
-                            "outfile": "BP/scripts/jstash/item_editor/main.js",
-                            "moduleUUID": "16519e12-58a5-4f39-8ef7-50a3d6fc4eaf"
-                        }
+                        "profile": "scripts-debug"
                     }
                 ]
             },
@@ -81,6 +63,36 @@
                             ],
                             "outfile": "BP/scripts/jstash/item_editor/main.js",
                             "moduleUUID": "16519e12-58a5-4f39-8ef7-50a3d6fc4eaf"
+                        }
+                    }
+                ]
+            },
+            "scripts-debug": {
+                "export": {
+                    "target": "none",
+                    "readOnly": false
+                },
+                "filters": [
+                    {
+                        "filter": "gametests",
+                        "settings": {
+                            "buildOptions": {
+                                "bundle": true,
+                                "entryPoints": [
+                                    "data/gametests/src/main.ts"
+                                ],
+                                "format": "esm",
+                                "minify": false,
+                                "target": "es2020"
+                            },
+                            "debugBuild": true,
+                            "modules": [
+                                "@minecraft/server@2.9.0",
+                                "@minecraft/server-ui@2.1.0"
+                            ],
+                            "outfile": "BP/scripts/jstash/item_editor/main.js",
+                            "moduleUUID": "16519e12-58a5-4f39-8ef7-50a3d6fc4eaf",
+                            "injectSourceMapping": true
                         }
                     }
                 ]

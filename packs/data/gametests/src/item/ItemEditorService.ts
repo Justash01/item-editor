@@ -1,9 +1,10 @@
-import { ItemStack, ItemType } from '@minecraft/server';
+import { Entity, ItemStack, ItemType } from '@minecraft/server';
 import { InventorySource } from '../core/InventorySource';
 import { SlotHandle } from '../core/SlotHandle';
 import { Result, attempt, fail, ok } from '../util/Result';
 import { ItemData } from './ItemData';
-import { JsonValue } from '../util/json';
+import { JsonValue, parseRelaxedJson } from '../util/json';
+import { itemWithData } from './StorageEntity';
 import { ItemMutation, ItemProperty } from './ItemProperty';
 import { itemRef } from '../util/names';
 
@@ -190,13 +191,31 @@ export class ItemEditorService {
     }
 
     static give(
+        holder: Entity,
         source: InventorySource,
         itemType: ItemType,
         amount: number,
         data?: string
     ): Result<string> {
+        const document = readGrantDocument(data);
+        if (!document.ok) {
+            return document;
+        }
+        const { fields, dataValue } = document.value;
+
         const built = attempt(
-            () => new ItemStack(itemType, amount),
+            () => {
+                const plain = new ItemStack(itemType, amount);
+                return dataValue === undefined
+                    ? plain
+                    : itemWithData(
+                          holder.dimension,
+                          holder.location,
+                          itemType.id,
+                          plain.amount,
+                          dataValue
+                      );
+            },
             `Failed to create ${amount} x ${itemRef(itemType.id)}`
         );
         if (!built.ok) {
@@ -204,8 +223,8 @@ export class ItemEditorService {
         }
 
         const item = built.value;
-        if (data !== undefined && data.trim().length > 0) {
-            const planned = ItemData.plan(data, item);
+        if (fields !== undefined) {
+            const planned = ItemData.planValue(fields, item);
             if (!planned.ok) {
                 return planned;
             }
@@ -221,9 +240,52 @@ export class ItemEditorService {
 
         return attempt(() => {
             const leftover = source.addItem(item);
-            return leftover
-                ? `Gave ${amount - leftover.amount} x ${itemRef(itemType.id)} to ${source.displayName}; ${leftover.amount} did not fit.`
-                : `Gave ${amount} x ${itemRef(itemType.id)} to ${source.displayName}.`;
+            if (!leftover) {
+                return `Gave ${amount} x ${itemRef(itemType.id)} to ${source.displayName}.`;
+            }
+            holder.dimension.spawnItem(leftover, holder.location);
+            return `Gave ${amount - leftover.amount} x ${itemRef(itemType.id)} to ${source.displayName}; ${leftover.amount} didn't fit and were dropped at their feet.`;
         }, 'Failed to give the item');
     }
+}
+
+const MAX_DATA_VALUE = 32767;
+
+// datavalue has to be known before the item exists, so it's taken out here and
+// never reaches the property list.
+function readGrantDocument(
+    text: string | undefined
+): Result<{ fields?: JsonValue; dataValue?: number }> {
+    if (text === undefined || text.trim().length === 0) {
+        return ok({});
+    }
+    const parsed = parseRelaxedJson(text);
+    if (!parsed.ok) {
+        return fail(`Invalid item data: ${parsed.error}`);
+    }
+    const value = parsed.value;
+    if (
+        value === null ||
+        typeof value !== 'object' ||
+        Array.isArray(value) ||
+        value.datavalue === undefined
+    ) {
+        return ok({ fields: value });
+    }
+
+    const { datavalue, ...rest } = value;
+    if (
+        typeof datavalue !== 'number' ||
+        !Number.isInteger(datavalue) ||
+        datavalue < 0 ||
+        datavalue > MAX_DATA_VALUE
+    ) {
+        return fail(
+            `Field "datavalue": expected a whole number from 0 to ${MAX_DATA_VALUE}.`
+        );
+    }
+    return ok({
+        fields: Object.keys(rest).length > 0 ? rest : undefined,
+        dataValue: datavalue,
+    });
 }

@@ -31,6 +31,21 @@ export class ItemData {
         return stringifyRelaxedJson(ItemData.from(item));
     }
 
+    // The document goes inside double quotes, so any in the text need a
+    // backslash, and so does the backslash itself.
+    static grantCommand(item: ItemStack): string {
+        const base = `/jstash:grant @s ${item.typeId} ${item.amount}`;
+        const document = ItemData.from(item);
+        delete document.amount;
+        if (Object.keys(document).length === 0) {
+            return base;
+        }
+        const quoted = stringifyRelaxedJson(document)
+            .replace(/\\/g, '\\\\')
+            .replace(/"/g, '\\"');
+        return `${base} "${quoted}"`;
+    }
+
     static plan(text: string, item: ItemStack): Result<ItemMutation[]> {
         const parsed = parseRelaxedJson(text);
         if (!parsed.ok) {
@@ -54,8 +69,21 @@ export class ItemData {
         }
 
         const mutations: ItemMutation[] = [];
+        // Registry order, not document order: lore has to land before stats and
+        // abilities, or it wipes the lines they write.
+        const order = ItemPropertyRegistry.ids();
+        const rank = (key: string): number => {
+            const at = order.indexOf(key.trim().toLowerCase());
+            return at < 0 ? -1 : at;
+        };
+        const entries = Object.entries(document).sort(
+            ([a], [b]) => rank(a) - rank(b)
+        );
 
-        for (const [key, value] of Object.entries(document)) {
+        for (const [key, value] of entries) {
+            if (key === 'datavalue') {
+                return fail('datavalue only works with /jstash:grant.');
+            }
             const property = ItemPropertyRegistry.get(key);
             if (!property.ok) {
                 return fail(

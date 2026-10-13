@@ -12,6 +12,7 @@ import {
     describeStep,
     describeSteps,
     newAbilityId,
+    parseAbilities,
     parseAbility,
     parseStep,
     readAbilities,
@@ -19,6 +20,13 @@ import {
     serializeStep,
     triggerLabel,
 } from '../abilities/Ability';
+import {
+    copiedAbilities,
+    copyAbilities,
+    deleteTemplate,
+    saveTemplate,
+    savedTemplates,
+} from '../abilities/library';
 import { AbilityRuntime } from '../abilities/AbilityRuntime';
 import { ACTIONS, actionFor } from '../abilities/actions';
 import { ceilingOf, defaultValue, targetOptions } from '../abilities/fields';
@@ -37,6 +45,7 @@ import { Settings } from '../core/Settings';
 import { SlotHandle } from '../core/SlotHandle';
 import { ItemEditorService, jsonEdit } from '../item/ItemEditorService';
 import { ItemPropertyRegistry } from '../item/ItemPropertyRegistry';
+import { hasSummary, refreshLore } from '../item/generatedLore';
 import { Result, fail, ok } from '../util/Result';
 import { Color } from '../util/colors';
 import { ExitSignal } from './ExitSignal';
@@ -138,8 +147,48 @@ export class AbilityEditor {
                     `${TEMPLATES.length} ready to use, change them after`
                 );
 
+            const copied = copiedAbilities(this.viewer).length;
+            if (count > 0 || copied > 0) {
+                menu.section('Share');
+            }
             if (count > 0) {
                 menu.option(
+                    'Copy all abilities',
+                    () => {
+                        acted = true;
+                        this.report(
+                            copyAbilities(this.viewer, abilities.value)
+                        );
+                    },
+                    'To paste onto another item, leaving the rest of it alone'
+                );
+            }
+            if (copied > 0) {
+                menu.option(
+                    'Paste abilities',
+                    () => {
+                        acted = true;
+                        this.report(this.paste());
+                    },
+                    `Adds the ${copied} you copied to the ones here`
+                );
+            }
+
+            if (count > 0) {
+                const summarized = this.hasSummary();
+                menu.section('Lore').option(
+                    summarized
+                        ? 'Remove ability lore'
+                        : 'Write abilities into lore',
+                    () => {
+                        acted = true;
+                        this.report(this.writeSummary(!summarized));
+                    },
+                    summarized
+                        ? 'Only the lines written from abilities'
+                        : 'Gray lines under any lore already there, kept up to date as you edit'
+                );
+                menu.section('Remove').option(
                     'Remove all abilities',
                     async () => {
                         acted = true;
@@ -247,6 +296,22 @@ export class AbilityEditor {
                     'Add a copy to change'
                 )
                 .option(
+                    'Copy',
+                    () => {
+                        acted = true;
+                        this.report(copyAbilities(this.viewer, [ability]));
+                    },
+                    'Just this one, to paste onto another item'
+                )
+                .option(
+                    'Save as a template',
+                    async () => {
+                        acted = true;
+                        await this.saveAsTemplate(ability);
+                    },
+                    'Shows up under Templates for everyone on this world'
+                )
+                .option(
                     'Remove ability',
                     async () => {
                         acted = true;
@@ -306,7 +371,28 @@ export class AbilityEditor {
 
     private async fromTemplate(): Promise<void> {
         let picked: Template | undefined;
+        let manage = false;
         const menu = new Menu(this.viewer, 'Templates').withBack();
+        const saved = savedTemplates();
+        if (saved.length > 0) {
+            menu.section('Saved on this world');
+            for (const template of saved) {
+                menu.option(
+                    template.label,
+                    () => {
+                        picked = template;
+                    },
+                    template.detail
+                );
+            }
+            menu.option(
+                'Delete a saved template',
+                () => {
+                    manage = true;
+                },
+                'Built-in ones stay'
+            );
+        }
         for (const trigger of TRIGGERS) {
             const group = TEMPLATES.filter(
                 (template) => template.ability.trigger === trigger.id
@@ -327,7 +413,14 @@ export class AbilityEditor {
         }
 
         const shown = await menu.show();
-        if (!shown.ok || !picked) {
+        if (!shown.ok) {
+            return;
+        }
+        if (manage) {
+            await this.deleteSaved();
+            return;
+        }
+        if (!picked) {
             return;
         }
 
@@ -774,6 +867,84 @@ export class AbilityEditor {
             ),
             { visible }
         );
+    }
+
+    private async deleteSaved(): Promise<void> {
+        let picked: string | undefined;
+        const menu = new Menu(this.viewer, 'Delete a template').withBack();
+        for (const template of savedTemplates()) {
+            menu.option(
+                template.label,
+                () => {
+                    picked = template.label;
+                },
+                template.detail
+            );
+        }
+        const shown = await menu.show();
+        if (!shown.ok || !picked) {
+            return;
+        }
+        const confirmed = await confirmDestructive(
+            this.viewer,
+            'Delete template',
+            `Delete "${picked}" for everyone on this world?`,
+            'Delete'
+        );
+        if (confirmed) {
+            this.report(deleteTemplate(picked));
+        }
+    }
+
+    private async saveAsTemplate(ability: Ability): Promise<void> {
+        const name = writableString(clip(describeSteps(ability)).slice(0, 32));
+        let save = false;
+        const form = new CustomForm(this.viewer, 'Save as a template');
+        form.textField('Name', name, {
+            description:
+                'Up to 32 characters. Saving under a name already used replaces it.',
+        });
+        form.divider();
+        form.button('Save', () => {
+            save = true;
+            form.close();
+        });
+        form.closeButton();
+
+        const shown = await open(form, this.viewer);
+        if (shown.ok && save) {
+            this.report(saveTemplate(name.getData(), ability));
+        }
+    }
+
+    private paste(): Result<string> {
+        const current = this.read();
+        if (!current.ok) {
+            return current;
+        }
+        const copied = parseAbilities(copiedAbilities(this.viewer));
+        if (!copied.ok) {
+            return fail(`The copied abilities are unreadable: ${copied.error}`);
+        }
+        return this.write([...current.value, ...copied.value]);
+    }
+
+    private hasSummary(): boolean {
+        const item = ItemEditorService.require(this.slot);
+        return item.ok && hasSummary(item.value);
+    }
+
+    private writeSummary(include: boolean): Result<string> {
+        const lore = ItemPropertyRegistry.get('lore');
+        if (!lore.ok) {
+            return fail("Can't edit lore.");
+        }
+        return ItemEditorService.applyAll(this.slot, [
+            {
+                property: lore.value,
+                stage: () => ok((item) => refreshLore(item, include)),
+            },
+        ]);
     }
 
     private tryOut(ability: Ability): void {

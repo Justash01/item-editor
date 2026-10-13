@@ -29,6 +29,9 @@ export class SettingsForm {
         const wandNeedsSneak = writableBoolean(current.wandNeedsSneak);
         const stackableAbilities = writableBoolean(current.stackableAbilities);
         const typedNumbers = writableBoolean(current.typedNumbers);
+        const commandSteps = writableBoolean(current.commandSteps);
+        const statLore = writableBoolean(current.statLore);
+        const explainSkips = writableBoolean(current.explainSkips);
 
         form.header('Feedback');
         // Headings sit right on top of the next row without this.
@@ -55,6 +58,10 @@ export class SettingsForm {
         });
         form.toggle('Roman enchantment levels', romanNumerals, {
             description: 'Sharpness V instead of Sharpness 5.',
+        });
+        form.toggle('Apply stats information automatically', statLore, {
+            description:
+                'A line like "+50% Damage Dealt" at the top of the lore on items with attack or protection set. Items change the next time their stats are edited.',
         });
 
         form.divider();
@@ -92,6 +99,14 @@ export class SettingsForm {
             description:
                 'Number boxes instead of sliders when editing abilities, so values can go past the usual range. Huge values can lag the game or make it stop responding, so raise them a bit at a time.',
         });
+        form.toggle('Allow command steps', commandSteps, {
+            description:
+                'Command steps run with full permissions whoever holds the item. Off skips them everywhere.',
+        });
+        form.toggle('Explain skipped abilities', explainSkips, {
+            description:
+                "When an ability doesn't go off, the action bar says why: a condition, the cooldown, the chance or a cost. Handy while setting things up, noisy otherwise.",
+        });
 
         let save = false;
         form.divider();
@@ -122,6 +137,9 @@ export class SettingsForm {
                 wandNeedsSneak: wandNeedsSneak.getData(),
                 stackableAbilities: stackableAbilities.getData(),
                 typedNumbers: typedNumbers.getData(),
+                commandSteps: commandSteps.getData(),
+                statLore: statLore.getData(),
+                explainSkips: explainSkips.getData(),
             });
             succeed(viewer, 'Settings saved.');
         } catch (error) {

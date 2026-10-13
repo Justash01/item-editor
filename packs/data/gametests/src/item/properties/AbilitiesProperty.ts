@@ -7,6 +7,7 @@ import {
     writeAbilities,
 } from '../../abilities/Ability';
 import { allowsAbilities } from '../../abilities/storage';
+import { refreshLore } from '../generatedLore';
 import { Result, ok } from '../../util/Result';
 import {
     JsonValue,
@@ -69,6 +70,7 @@ export class AbilitiesProperty extends BaseItemProperty {
         }
         return ok((target) => {
             writeAbilities(target, abilities.value);
+            refreshLore(target);
         });
     }
 
@@ -76,6 +78,7 @@ export class AbilitiesProperty extends BaseItemProperty {
         if (raw.trim().length === 0) {
             return ok((item) => {
                 writeAbilities(item, []);
+                refreshLore(item);
             });
         }
         const parsed = parseRelaxedJson(raw);
@@ -84,5 +87,6 @@ export class AbilitiesProperty extends BaseItemProperty {
 
     reset(item: ItemStack): void {
         writeAbilities(item, []);
+        refreshLore(item);
     }
 }
